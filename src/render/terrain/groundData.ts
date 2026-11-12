@@ -1,11 +1,13 @@
 import * as THREE from 'three';
-import { OBSTACLES, TERRAIN, heightAt, noise2, pathMask, smoothstep } from '../../core';
+import { OBSTACLES, STRUCTURES, TERRAIN, heightAt, noise2, smoothstep } from '../../core';
 
 /**
  * A texture baked once at startup that lets GPU shaders know about the ground:
- *   R = height, G = grass density (0..1), B = flower density (0..1).
+ *   R = height, G = grass density (0..1), B = flower density (0..1),
+ *   A = contact shading (0..1): soft darkening where trees, rocks, buildings and
+ *       posts meet the ground, and under tree crowns.
  * Grass and flowers read it in their vertex shaders, so they follow the land
- * with no per-frame work on the CPU.
+ * with no per-frame work on the CPU; the terrain reads it for colour.
  */
 export const GROUND_DATA_EXTENT = 64; // covers [-64, 64] on x and z
 const SIZE = 256;
@@ -15,7 +17,37 @@ export interface GroundData {
   extent: number;
 }
 
+/** A soft disc of darkening: full strength inside `inner`, gone at `outer`. */
+interface Shade {
+  x: number;
+  z: number;
+  inner: number;
+  outer: number;
+  strength: number;
+}
+
+/** Where things meet the ground. Reusable: every new kind of object adds its shading here. */
+function contactShades(): Shade[] {
+  const out: Shade[] = [];
+  for (const o of OBSTACLES) {
+    if (o.kind === 'tree') {
+      // Shade under the crown, and a tighter, darker ring where the trunk meets the ground.
+      out.push({ x: o.x, z: o.z, inner: 0.4 * o.scale, outer: 2.6 * o.scale, strength: 0.42 });
+      out.push({ x: o.x, z: o.z, inner: 0.15, outer: 0.85 * o.scale, strength: 0.35 });
+    } else {
+      out.push({ x: o.x, z: o.z, inner: o.r * 0.85, outer: o.r * 1.5 + 0.35, strength: 0.6 });
+    }
+  }
+  for (const s of STRUCTURES) {
+    if (s.kind === 'tower') out.push({ x: s.x, z: s.z, inner: s.r * 0.95, outer: s.r + 1.3, strength: 0.5 });
+    else if (s.kind === 'stall') out.push({ x: s.x, z: s.z, inner: s.r * 0.5, outer: s.r + 0.7, strength: 0.45 });
+    else out.push({ x: s.x, z: s.z, inner: 0.05, outer: 0.65, strength: 0.4 });
+  }
+  return out;
+}
+
 export function bakeGroundData(): GroundData {
+  const shades = contactShades();
   const values = new Float32Array(SIZE * SIZE * 4);
   const step = (GROUND_DATA_EXTENT * 2) / (SIZE - 1);
   const boulders = OBSTACLES.filter((o) => o.kind === 'boulder');
@@ -29,7 +61,7 @@ export function bakeGroundData(): GroundData {
       const slope = Math.hypot(heightAt(x + e, z) - heightAt(x - e, z), heightAt(x, z + e) - heightAt(x, z - e)) / (2 * e);
 
       let grass = 1;
-      grass *= 1 - smoothstep(0.25, 0.75, pathMask(x, z)); // not on footpaths
+      // Footpaths are cut out on the GPU with the same edge the ground draws (pathGlsl.ts).
       grass *= smoothstep(TERRAIN.waterLevel + 0.45, TERRAIN.waterLevel + 0.9, h); // not on sand or in water
       grass *= 1 - smoothstep(0.65, 1.0, slope); // thin only on steep ground
       grass *= 1 - smoothstep(48, 60, Math.hypot(x, z)); // fades out up the mountains
@@ -47,7 +79,15 @@ export function bakeGroundData(): GroundData {
       values[k] = h;
       values[k + 1] = grass;
       values[k + 2] = flowers;
-      values[k + 3] = 1;
+      // Contact shading: darkenings combine like overlapping shadows, never past black.
+      let lit = 1;
+      for (const sh of shades) {
+        const dx = x - sh.x;
+        const dz = z - sh.z;
+        if (Math.abs(dx) > sh.outer || Math.abs(dz) > sh.outer) continue;
+        lit *= 1 - sh.strength * (1 - smoothstep(sh.inner, sh.outer, Math.hypot(dx, dz)));
+      }
+      values[k + 3] = 1 - lit;
     }
   }
 

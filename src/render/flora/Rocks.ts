@@ -1,47 +1,105 @@
 import * as THREE from 'three';
+import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { OBSTACLES, TERRAIN, distToPath, heightAt, noise2, obstacleAt } from '../../core';
+import { NOISE_GLSL, getNoiseTexture } from '../noiseTexture';
+import { addFade } from '../fade';
 import type { Atmosphere } from '../sky/Atmosphere';
 
 /**
- * Code-built rocks: lumpy, flattened stones in a warm grey, with moss on the
- * upward faces. Boulders stand where the core places them (they block movement);
- * small decorative stones are scattered along the shore and path edges.
+ * Code-built rocks: lumpy stones sliced by a few random planes, so they read as
+ * chiselled, with flat facets and softened edges. Moss, faint strata and a darker
+ * base where the stone sits in the ground are drawn in the shader. Boulders stand
+ * where the core places them (they block movement); small decorative stones are
+ * scattered along the shore and path edges.
  */
-const ROCK = new THREE.Color('#cdb99f');
-const ROCK_DARK = new THREE.Color('#a48f80');
-const MOSS = new THREE.Color('#82ad58');
+const ROCK = new THREE.Color('#c9b8a2');
+const ROCK_DARK = new THREE.Color('#8c7f6c');
 
-function rockGeometry(variant: number) {
-  const g = new THREE.IcosahedronGeometry(1, 2);
+function rockGeometry(variant: number, detail = 3) {
+  const g = mergeVertices(new THREE.IcosahedronGeometry(1, detail).deleteAttribute('normal').deleteAttribute('uv'));
   const pos = g.attributes.position as THREE.BufferAttribute;
   const v = new THREE.Vector3();
   const seed = variant * 17;
+  const r = rng(40 + variant);
+  // Cutting planes: mostly around the sides and on top, so the stone has broad faces.
+  const planes: { n: THREE.Vector3; d: number }[] = [];
+  for (let i = 0; i < 7; i++) {
+    const a = (i / 7) * Math.PI * 2 + r() * 0.6;
+    const up = i === 0 ? 1 : r() * 0.7 - 0.1;
+    planes.push({ n: new THREE.Vector3(Math.cos(a), up, Math.sin(a)).normalize(), d: 0.62 + r() * 0.2 });
+  }
   for (let i = 0; i < pos.count; i++) {
     v.fromBufferAttribute(pos, i);
     const n = noise2(v.x * 1.6 + seed, v.z * 1.6 + v.y * 1.3, 51);
     const big = noise2(v.x * 0.7 + seed, v.y * 0.7 - v.z, 53);
-    v.multiplyScalar(0.75 + 0.35 * big + 0.12 * n);
-    v.y *= 0.62 + variant * 0.08; // flattened
-    if (v.y < -0.15) v.y = -0.15 - (v.y + 0.15) * 0.2; // flat-ish bottom sunk into the ground
+    v.multiplyScalar(0.8 + 0.3 * big + 0.08 * n);
+    for (const pl of planes) {
+      const k = v.dot(pl.n) - pl.d;
+      if (k > 0) v.addScaledVector(pl.n, -k);
+    }
+    v.y *= 0.66 + variant * 0.08; // flattened
+    if (v.y < -0.12) v.y = -0.12 - (v.y + 0.12) * 0.2; // flat-ish bottom sunk into the ground
     pos.setXYZ(i, v.x, v.y, v.z);
   }
-  // Facet the stone slightly: unshare vertices so faces read as chiselled planes.
-  const flat = g.toNonIndexed();
-  flat.computeVertexNormals();
-  const p = flat.attributes.position as THREE.BufferAttribute;
-  const nor = flat.attributes.normal as THREE.BufferAttribute;
-  const col = new Float32Array(p.count * 3);
+  // Smooth normals soften the facet edges like a worn bevel; the facets themselves stay flat.
+  g.computeVertexNormals();
+  g.computeBoundingBox();
+  const { min, max } = g.boundingBox!;
+  const h = new Float32Array(pos.count);
+  const col = new Float32Array(pos.count * 3);
   const c = new THREE.Color();
-  for (let i = 0; i < p.count; i++) {
-    const ny = nor.getY(i);
-    c.copy(ROCK_DARK).lerp(ROCK, THREE.MathUtils.smoothstep(p.getY(i), -0.2, 0.5));
-    c.multiplyScalar(0.92 + 0.16 * noise2(p.getX(i) * 3 + seed, p.getZ(i) * 3, 55));
-    c.lerp(MOSS, THREE.MathUtils.smoothstep(ny, 0.55, 0.85) * 0.85);
+  for (let i = 0; i < pos.count; i++) {
+    const y = (pos.getY(i) - min.y) / (max.y - min.y);
+    h[i] = y;
+    c.copy(ROCK_DARK).lerp(ROCK, THREE.MathUtils.smoothstep(y, 0.0, 0.8));
+    c.multiplyScalar(0.93 + 0.14 * noise2(pos.getX(i) * 3 + seed, pos.getZ(i) * 3, 55));
     col.set([c.r, c.g, c.b], i * 3);
   }
-  flat.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  return flat;
+  g.setAttribute('aH', new THREE.BufferAttribute(h, 1));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  return g;
 }
+
+const ROCK_VERTEX_PARS = /* glsl */ `
+attribute float aH;
+varying float vH;
+varying vec3 vRockN;
+`;
+const ROCK_VERTEX = /* glsl */ `
+vH = aH;
+{
+  mat3 m = mat3(modelMatrix);
+  #ifdef USE_INSTANCING
+    m = m * mat3(instanceMatrix);
+  #endif
+  vRockN = normalize(m * objectNormal);
+}
+`;
+const ROCK_FRAGMENT_PARS = /* glsl */ `
+uniform vec3 uMoss;
+uniform vec3 uMossDark;
+varying float vH;
+varying vec3 vRockN;
+${NOISE_GLSL}
+`;
+const ROCK_FRAGMENT = /* glsl */ `
+{
+  vec3 wp = vBqWorldPos;
+  // Faint strata and speckle.
+  float strata = bqNoiseC(vec2(wp.x * 0.7 + wp.z * 0.7, wp.y * 9.0));
+  diffuseColor.rgb *= 0.9 + 0.16 * strata + 0.08 * (bqNoiseD(wp.xz * 9.0 + wp.y * 5.0) - 0.5);
+  // Moss on upward faces, with a crisp, irregular edge and a darker rim.
+  float up = vRockN.y + (bqNoiseB(wp.xz * 3.0 + wp.y * 2.0) - 0.5) * 0.7;
+  float aa = fwidth(up) + 0.02;
+  float moss = smoothstep(0.74 - aa, 0.74 + aa, up);
+  float rim = smoothstep(0.6, 0.74, up) * (1.0 - moss);
+  vec3 mossCol = mix(uMossDark, uMoss, bqNoiseC(wp.xz * 6.0) * 0.6 + 0.4 * smoothstep(0.55, 0.95, vRockN.y));
+  diffuseColor.rgb *= 1.0 - 0.18 * rim;
+  diffuseColor.rgb = mix(diffuseColor.rgb, mossCol, moss);
+  // Darker where the stone sits in the ground.
+  diffuseColor.rgb *= mix(0.55, 1.0, smoothstep(0.0, 0.35, vH));
+}
+`;
 
 function rng(seed: number) {
   let s = seed >>> 0;
@@ -58,7 +116,25 @@ export function createRocks(atmosphere: Atmosphere, pebbleCount: number) {
   const group = new THREE.Group();
   group.name = 'rocks';
   const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 });
-  const geos = [0, 1, 2].map(rockGeometry);
+  const uniforms = {
+    uPlayerPos: { value: new THREE.Vector3() },
+    bqNoise: { value: getNoiseTexture() },
+    uMoss: { value: new THREE.Color('#8fb85a') },
+    uMossDark: { value: new THREE.Color('#4d7a3e') },
+  };
+  material.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, uniforms);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>\n${ROCK_VERTEX_PARS}`)
+      .replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>\n${ROCK_VERTEX}`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>\n${ROCK_FRAGMENT_PARS}`)
+      .replace('#include <color_fragment>', `#include <color_fragment>\n${ROCK_FRAGMENT}`);
+  };
+  material.customProgramCacheKey = () => 'bq-rock';
+  // Rocks are too low to hide the player; they only fade right in front of the lens.
+  addFade(material, uniforms, { occlusion: false });
+  const geos = [0, 1, 2].map((v) => rockGeometry(v));
   const matrix = new THREE.Matrix4();
   const q = new THREE.Quaternion();
   const up = new THREE.Vector3(0, 1, 0);
@@ -81,7 +157,10 @@ export function createRocks(atmosphere: Atmosphere, pebbleCount: number) {
   // Small stones along the lake shore and path edges (decoration only).
   if (pebbleCount > 0) {
     const r = rng(321);
-    const mesh = new THREE.InstancedMesh(geos[1], material, pebbleCount);
+    // Small stones are a few centimetres across: a low-detail shape is plenty.
+    const pebbleGeo = rockGeometry(1, 1);
+    geos.push(pebbleGeo);
+    const mesh = new THREE.InstancedMesh(pebbleGeo, material, pebbleCount);
     let n = 0;
     for (let tries = 0; tries < pebbleCount * 20 && n < pebbleCount; tries++) {
       const x = (r() - 0.5) * 80;
@@ -106,6 +185,9 @@ export function createRocks(atmosphere: Atmosphere, pebbleCount: number) {
   });
   return {
     group,
+    update(player: THREE.Vector3) {
+      uniforms.uPlayerPos.value.copy(player);
+    },
     dispose() {
       geos.forEach((g) => g.dispose());
       material.dispose();

@@ -66,3 +66,19 @@ describe('quality', () => {
     expect(q.pixelRatio(1)).toBe(1);
   });
 });
+
+describe('phone (medium) tier image budget', () => {
+  it('spends on resolution and anti-aliasing rather than a smoothing filter', () => {
+    const m = TIER_SETTINGS.medium;
+    expect(m.maxPixelRatio).toBeGreaterThanOrEqual(2);
+    expect(m.multisampling).toBeGreaterThan(0);
+    expect(m.painterlyRadius).toBe(0);
+  });
+
+  it('grass has a dense near field and a wider, sparser ring', () => {
+    for (const t of Object.values(TIER_SETTINGS)) {
+      expect(t.grassFar.radius).toBeGreaterThan(t.grass.radius);
+      expect(t.grassFar.count / t.grassFar.radius ** 2).toBeLessThan(t.grass.count / t.grass.radius ** 2);
+    }
+  });
+});

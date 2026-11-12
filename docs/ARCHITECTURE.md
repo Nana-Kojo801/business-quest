@@ -34,7 +34,7 @@ No changes to core rules or rendering are needed for that.
 `src/render/pipeline.ts` runs each frame through:
 
 ```
-scene (HDR) -> painterly filter -> sharpen -> bloom -> tone mapping (Khronos Neutral) -> colour grade -> screen
+scene (HDR, MSAA) -> [painterly filter, high only] -> sharpen -> bloom -> tone mapping (Khronos Neutral) -> colour grade -> screen
 ```
 
 `src/render/quality.ts` picks a tier (phones start on medium, desktops on high), then lowers
@@ -43,8 +43,12 @@ render resolution when frames are slow and drops a tier if that is not enough.
 | Tier | Max pixel ratio | Painterly radius | MSAA | Shadows |
 |---|---|---|---|---|
 | low | 1 | off | off | off |
-| medium | 1.75 | 1 | off | 1024 |
-| high | 2 | 2 | 4x | 2048 |
+| medium | 2 | off | 4x | 1024 |
+| high | 2.5 | 1 | 4x | 2048 |
+
+Sharpness budget (#41): on phones the frame is spent on resolution and MSAA (cheap on tile-based
+phone GPUs) rather than the painterly smoothing filter, which blurred fine detail at phone density.
+The handcrafted look now comes from the content itself (drawn leaves, brushwork in shaders).
 
 URL options: `?quality=low|medium|high`, `?adaptive=0`, `?debug=1` (fps overlay).
 
@@ -81,21 +85,39 @@ GPUs. Use it for any new procedural shader.
 sky reflection using the shared sky colour function, sun glints that catch the bloom, breathing
 shore foam, and the shared atmospheric fog.
 
+## Fading things out of the way
+
+`src/render/fade.ts` (`addFade(material, uniforms, { occlusion })`) is the shared dissolve for
+world objects: anything between the camera and the player fades out completely (no leftover dot
+pattern), and anything right in front of the lens fades so a post or trunk never fills the screen.
+Low objects (rocks) use only the near-lens fade. Trees, rocks, buildings and their glowing parts use it.
+
 ## Vegetation and rocks
 
 - `src/core/flora.ts`: deterministic tree and boulder placement (clear of paths, spawn, water
   and the plateau top). `src/core/collision.ts`: walkability including trees and rocks; players
   slide around them.
-- `src/render/terrain/groundData.ts`: a texture baked at startup with height, grass density and
-  flower density, read by vegetation vertex shaders.
+- `src/render/terrain/groundData.ts`: a texture baked at startup with height, grass density,
+  flower density and **contact shading** (A: soft darkening where trees, rocks, buildings and
+  posts meet the ground, and under crowns). The terrain and grass both read it. New kinds of
+  objects add their shading in `contactShades()`.
+- `src/render/terrain/pathGlsl.ts`: the footpath edge computed per pixel from the path segments,
+  shared by the ground (crisp, anti-aliased edge, darker compacted rim, pebbles toward the edges)
+  and the grass (grows right up to the same edge).
 - `src/render/flora/Field.ts`: grass and flowers wrap around the player on the GPU (no per-frame
-  CPU work). Geometry must carry a normal attribute, or three.js silently flat-shades it.
-- `src/render/flora/Trees.ts`: instanced code-built trees (three shapes) with crown-centred
-  normals for soft painted shading, wind sway, backlit rim glow, and a dither dissolve for
-  anything between the camera and the player. Simple trees cover the lower mountain slopes.
-- `src/render/flora/Rocks.ts`: instanced faceted boulders with moss, and small shore/path stones.
+  CPU work): a dense near field of slender curved blades plus a sparser far ring (`grassFar`), so
+  the grass never ends at a visible line. Blades bend away around the player's feet. Geometry must
+  carry a normal attribute, or three.js silently flat-shades it.
+- `src/render/flora/Trees.ts`: instanced code-built trees. Broadleaf and blossom crowns are
+  sculpted clumps plus camera-facing leaf cards drawn from `leafAtlas.ts` (leaves and blossoms
+  drawn in code on a canvas at startup), cut out with edge sharpening and alpha-to-coverage when
+  MSAA is on; one material and one draw call per crown. Pines are jagged stacked skirts. Trunks
+  flare into roots and fork into branches. Crown-centred normals, wind sway, leaf flutter, backlit
+  rim glow. Simple pines and rounded trees cover the lower mountain slopes.
+- `src/render/flora/Rocks.ts`: instanced boulders sliced by random planes (chiselled facets, soft
+  edges), with moss, strata and a darker base drawn in the shader; small shore/path stones.
 
-Counts scale with the quality tier (`grass`, `flowers`, `farTrees`, `pebbles`).
+Counts scale with the quality tier (`grass`, `grassFar`, `flowers`, `farTrees`, `pebbles`).
 
 ## Buildings and props
 
@@ -182,5 +204,5 @@ Marcellus for titles, Nunito for text; SVG icons in `icons.ts`).
   it after `renderer.compileAsync` has prepared every shader and the first frames have drawn.
 - Characters are skinned meshes (one skeleton, body/cloth/outline meshes: ~5 draw calls each).
   Valley trees are instanced per 32 m cell so culling works for the camera and the shadow map;
-  far trees use low-detail crowns. Medium tier: ~130 draw calls, ~445k triangles (was 226 / 709k).
+  far trees use low-detail crowns. Medium tier: ~130 draw calls, ~650k triangles (after #41's grass, leaves and rocks; was 445k).
 - Debug: `window.triBreakdown()` lists triangles per scene object; `__bq.renderInfo` gives calls.

@@ -35,7 +35,7 @@ vec3 bqGrassColor(vec2 p, out float n1, out float n2, out float stroke) {
   n2 = bqNoiseB(p * 0.31 + 17.0);      // medium breakup
   float n3 = bqNoiseC(p * 0.85 + 41.0); // fine dabs, visible up close
   // Brush strokes: noise stretched along one diagonal, like loaded-brush dabs.
-  vec2 bp = vec2(dot(p, vec2(0.8, 0.6)) * 0.9, dot(p, vec2(-0.6, 0.8)) * 0.22);
+  vec2 bp = vec2(dot(p, vec2(0.8, 0.6)) * 0.9, dot(p, vec2(-0.6, 0.8)) * 0.42);
   stroke = bqNoiseD(bp) * 0.65 + bqNoiseA(bp * 2.3 + 5.0) * 0.35;
 
   // Warm and cool greens in soft patches, deep green in hollows, gold meadow highlights.

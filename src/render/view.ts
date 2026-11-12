@@ -121,7 +121,7 @@ export class WorldView {
     const world = new THREE.Group();
 
     // The terrain extends far past the valley so its edge is always lost in the fog.
-    const terrain = createTerrain();
+    const terrain = createTerrain(this.ground);
     world.add(terrain);
 
 
@@ -166,10 +166,11 @@ export class WorldView {
     const tier = this.quality.settings;
     this.fields = [
       createField('grass', tier.grass, this.atmosphere, this.ground),
+      createField('grass', { ...tier.grassFar, inner: tier.grass.radius * 0.85 }, this.atmosphere, this.ground),
       createField('flowers', tier.flowers, this.atmosphere, this.ground),
     ];
     for (const f of this.fields) this.scene.add(f.mesh);
-    this.trees = createTrees(this.atmosphere, { farCount: tier.farTrees });
+    this.trees = createTrees(this.atmosphere, { farCount: tier.farTrees, alphaToCoverage: tier.multisampling > 0 });
     this.rocks = createRocks(this.atmosphere, tier.pebbles);
     this.scene.add(this.trees.group, this.rocks.group);
     this.particles = createParticles(this.atmosphere, this.ground, tier.particles, () => this.renderer.getPixelRatio());
@@ -345,6 +346,7 @@ export class WorldView {
     const fadeFocus = this.rig.shot ? FAR_AWAY : this.focus;
     this.trees?.update(time, this.camera, fadeFocus);
     this.buildings.update(time, fadeFocus);
+    this.rocks?.update(fadeFocus);
     this.particles?.update(time, this.focus);
     this.shafts?.update(time, this.camera);
     this.birds.update(time);

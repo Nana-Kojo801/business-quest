@@ -28,8 +28,10 @@ export interface TierSettings {
   multisampling: number;
   /** Sun shadow map resolution; 0 turns shadows off. */
   shadowMapSize: number;
-  /** Grass clumps drawn around the player, and how far out they reach. */
+  /** Grass clumps drawn around the player, and how far out they reach: a dense near field and a
+   * sparser ring beyond it, so the grass never ends at a visible line. */
   grass: { count: number; radius: number };
+  grassFar: { count: number; radius: number };
   /** Flowers drawn around the player. */
   flowers: { count: number; radius: number };
   /** Simple trees on the distant mountain slopes, and decorative small stones. */
@@ -41,9 +43,9 @@ export interface TierSettings {
 }
 
 export const TIER_SETTINGS: Record<Tier, TierSettings> = {
-  low: { maxPixelRatio: 1, minScale: 0.6, painterlyRadius: 0, bloomLevels: 4, multisampling: 0, shadowMapSize: 0, grass: { count: 2400, radius: 11 }, flowers: { count: 260, radius: 11 }, farTrees: 200, pebbles: 30, particles: { motes: 120, fireflies: 30, petalsPerTree: 4 }, lightShafts: 4 },
-  medium: { maxPixelRatio: 1.75, minScale: 0.6, painterlyRadius: 1, bloomLevels: 6, multisampling: 0, shadowMapSize: 1024, grass: { count: 6000, radius: 16 }, flowers: { count: 700, radius: 16 }, farTrees: 450, pebbles: 70, particles: { motes: 350, fireflies: 60, petalsPerTree: 6 }, lightShafts: 8 },
-  high: { maxPixelRatio: 2, minScale: 0.9, painterlyRadius: 2, bloomLevels: 8, multisampling: 4, shadowMapSize: 2048, grass: { count: 10000, radius: 20 }, flowers: { count: 1200, radius: 20 }, farTrees: 800, pebbles: 110, particles: { motes: 600, fireflies: 90, petalsPerTree: 9 }, lightShafts: 10 },
+  low: { maxPixelRatio: 1, minScale: 0.6, painterlyRadius: 0, bloomLevels: 4, multisampling: 0, shadowMapSize: 0, grass: { count: 1800, radius: 8 }, grassFar: { count: 1600, radius: 13 }, flowers: { count: 260, radius: 11 }, farTrees: 200, pebbles: 30, particles: { motes: 120, fireflies: 30, petalsPerTree: 4 }, lightShafts: 4 },
+  medium: { maxPixelRatio: 2, minScale: 0.6, painterlyRadius: 0, bloomLevels: 6, multisampling: 4, shadowMapSize: 1024, grass: { count: 4000, radius: 9 }, grassFar: { count: 3600, radius: 18 }, flowers: { count: 700, radius: 16 }, farTrees: 450, pebbles: 70, particles: { motes: 350, fireflies: 60, petalsPerTree: 6 }, lightShafts: 8 },
+  high: { maxPixelRatio: 2.5, minScale: 0.9, painterlyRadius: 1, bloomLevels: 8, multisampling: 4, shadowMapSize: 2048, grass: { count: 6500, radius: 10 }, grassFar: { count: 6500, radius: 22 }, flowers: { count: 1200, radius: 20 }, farTrees: 800, pebbles: 110, particles: { motes: 600, fireflies: 90, petalsPerTree: 9 }, lightShafts: 10 },
 };
 
 const TARGET_FRAME_MS = 1000 / 55; // aim for ~55+ fps

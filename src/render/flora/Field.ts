@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { NOISE_GLSL, getNoiseTexture } from '../noiseTexture';
 import { PALETTE_UNIFORMS_GLSL, paletteUniforms } from '../terrain/palette';
 import { GROUND_DATA_GLSL, type GroundData } from '../terrain/groundData';
+import { PATH_GLSL, pathUniforms } from '../terrain/pathGlsl';
 import type { Atmosphere } from '../sky/Atmosphere';
 
 /**
@@ -16,7 +17,10 @@ export type FieldKind = 'grass' | 'flowers';
 
 export interface FieldSettings {
   count: number;
+  /** Instances fade out toward this distance from the player. */
   radius: number;
+  /** Instances fade in from this distance (a far ring around a denser near field); 0 = none. */
+  inner?: number;
 }
 
 const FLOWER_COLORS = ['#fff4e6', '#ffd65a', '#ff9cc4', '#b9a2ff'];
@@ -33,60 +37,100 @@ function rand(seed: number) {
   };
 }
 
-/** A clump of four soft, tapered blades (4 vertices each). Attribute aPart: 0 = blade. */
-function grassClump(): THREE.BufferGeometry {
+/**
+ * A clump of slender, curving blades. Near clumps have more blades and a mid joint so each
+ * blade bends; far clumps are simpler. Attributes: aPart (0 = blade), aFace (the blade's
+ * facing direction, for a little light-and-shade between blades).
+ */
+function grassClump(detail: 'near' | 'far'): THREE.BufferGeometry {
   const pos: number[] = [];
+  const face: number[] = [];
   const idx: number[] = [];
-  const r = rand(7);
-  for (let b = 0; b < 4; b++) {
+  const r = rand(detail === 'near' ? 7 : 8);
+  const blades = detail === 'near' ? 6 : 4;
+  for (let b = 0; b < blades; b++) {
     const a = r() * Math.PI * 2;
-    const ox = Math.cos(a) * 0.14 * r();
-    const oz = Math.sin(a) * 0.14 * r();
-    const h = 0.3 + r() * 0.22;
-    const w = 0.12 + r() * 0.05;
-    const face = r() * Math.PI;
-    const lean = (r() - 0.5) * 0.35;
-    const cx = Math.cos(face);
-    const cz = Math.sin(face);
+    const ox = Math.cos(a) * 0.13 * Math.sqrt(r());
+    const oz = Math.sin(a) * 0.13 * Math.sqrt(r());
+    const h = (detail === 'near' ? 0.26 : 0.32) + r() * 0.28;
+    const w = (detail === 'near' ? 0.055 : 0.085) + r() * 0.03;
+    const f = r() * Math.PI;
+    const cx = Math.cos(f);
+    const cz = Math.sin(f);
+    // Bend direction: roughly across the blade's face, so it curls like a real blade.
+    const lean = 0.12 + r() * 0.22;
+    const lx = -cz * lean * (r() < 0.5 ? -1 : 1);
+    const lz = cx * lean;
     const base = pos.length / 3;
-    const pt = (u: number, y: number) => pos.push(ox + cx * u + lean * y, y, oz + cz * u + lean * y * 0.5);
-    pt(-w / 2, 0);
-    pt(w / 2, 0);
-    pt(0.06 * w, h * 0.6); // slightly off-centre waist gives a natural curve
-    pt(0, h);
-    idx.push(base, base + 1, base + 2, base, base + 2, base + 3, base + 1, base + 3, base + 2);
+    const pt = (u: number, t: number) => {
+      const bend = t * t; // curve grows toward the tip
+      pos.push(ox + cx * u + lx * bend, h * t, oz + cz * u + lz * bend);
+      face.push(-cz, cx);
+    };
+    if (detail === 'near') {
+      pt(-w / 2, 0);
+      pt(w / 2, 0);
+      pt(-w * 0.36, 0.55);
+      pt(w * 0.36, 0.55);
+      pt(0, 1);
+      idx.push(base, base + 1, base + 3, base, base + 3, base + 2, base + 2, base + 3, base + 4);
+    } else {
+      pt(-w / 2, 0);
+      pt(w / 2, 0);
+      pt(0.06 * w, 0.6);
+      pt(0, 1);
+      idx.push(base, base + 1, base + 2, base, base + 2, base + 3, base + 1, base + 3, base + 2);
+    }
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('aPart', new THREE.Float32BufferAttribute(new Array(pos.length / 3).fill(0), 1));
+  g.setAttribute('aFace', new THREE.Float32BufferAttribute(face, 2));
   g.setIndex(idx);
   return g;
 }
 
-/** A flower: a thin stem and a six-petal head. Attribute aPart: 0 = stem, 1 = head. */
+/**
+ * A flower: a thin stem, five rounded, slightly cupped petals and a contrasting centre.
+ * Attribute aPart: 0 = stem, 1 = petal (fractional part = distance out along the petal), 2 = centre.
+ */
 function flower(): THREE.BufferGeometry {
   const pos: number[] = [];
   const part: number[] = [];
   const idx: number[] = [];
   const h = 0.42;
-  const sw = 0.022;
+  const sw = 0.02;
   pos.push(-sw, 0, 0, sw, 0, 0, -sw * 0.6, h, 0, sw * 0.6, h, 0);
   part.push(0, 0, 0, 0);
   idx.push(0, 1, 2, 1, 3, 2);
-  const c = pos.length / 3;
-  pos.push(0, h + 0.01, 0);
-  part.push(1);
-  const petals = 6;
-  for (let i = 0; i < petals * 2; i++) {
-    const a = (i / (petals * 2)) * Math.PI * 2;
-    const rr = i % 2 === 0 ? 0.11 : 0.05; // alternating tips and notches
-    pos.push(Math.cos(a) * rr, h + 0.01 + Math.sin(a) * rr * 0.35, Math.sin(a) * rr);
-    part.push(1);
+  const y0 = h + 0.01;
+  const petals = 5;
+  for (let i = 0; i < petals; i++) {
+    const a = (i / petals) * Math.PI * 2;
+    const c = pos.length / 3;
+    pos.push(0, y0, 0);
+    part.push(1.0);
+    // Outline of one rounded petal: narrow at the base, broad and round at the tip.
+    const outline: [number, number][] = [[-0.42, 0.03], [-0.36, 0.08], [-0.2, 0.115], [0, 0.125], [0.2, 0.115], [0.36, 0.08], [0.42, 0.03]];
+    for (const [da, rr] of outline) {
+      pos.push(Math.cos(a + da) * rr, y0 + rr * 0.45, Math.sin(a + da) * rr); // cupped upward
+      part.push(1 + Math.min(0.99, rr / 0.125));
+    }
+    for (let k = 0; k < outline.length - 1; k++) idx.push(c, c + 2 + k, c + 1 + k);
   }
-  for (let i = 0; i < petals * 2; i++) idx.push(c, c + 1 + i, c + 1 + ((i + 1) % (petals * 2)));
+  const cc = pos.length / 3;
+  pos.push(0, y0 + 0.025, 0);
+  part.push(2);
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    pos.push(Math.cos(a) * 0.035, y0 + 0.018, Math.sin(a) * 0.035);
+    part.push(2);
+  }
+  for (let i = 0; i < 6; i++) idx.push(cc, cc + 1 + ((i + 1) % 6), cc + 1 + i);
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('aPart', new THREE.Float32BufferAttribute(part, 1));
+  g.setAttribute('aFace', new THREE.Float32BufferAttribute(new Array((pos.length / 3) * 2).fill(0), 2));
   g.setIndex(idx);
   return g;
 }
@@ -95,7 +139,9 @@ const VERTEX_PARS = /* glsl */ `
 attribute vec2 aBase;
 attribute vec4 aRand;
 attribute float aPart;
+attribute vec2 aFace;
 uniform vec2 uFocus;
+uniform float uInner;
 uniform float uWrap;
 uniform float uRadius;
 uniform float uTime;
@@ -106,6 +152,7 @@ uniform vec3 uFlowerColors[4];
 ${NOISE_GLSL}
 ${PALETTE_UNIFORMS_GLSL}
 ${GROUND_DATA_GLSL}
+${PATH_GLSL}
 // A cheaper version of the terrain's meadow colour (its two dominant noise terms), run per vertex.
 vec3 fieldGrassColor(vec2 p) {
   float n1 = bqNoiseA(p * 0.06);
@@ -127,8 +174,15 @@ const VERTEX_MAIN = /* glsl */ `
   #else
     float density = ground.g;
   #endif
+  // Grow right up to the footpath's edge (a few blades lean over it), never on it.
+  float pathD = pathEdgeDistance(wxz);
+  #ifdef FLOWERS
+    density *= smoothstep(PATH_EDGE + 0.1, PATH_EDGE + 0.35, pathD);
+  #else
+    density *= smoothstep(PATH_EDGE - 0.12, PATH_EDGE + 0.12, pathD);
+  #endif
   float keep = smoothstep(aRand.x - 0.06, aRand.x + 0.06, density);
-  float fade = 1.0 - smoothstep(uRadius * 0.62, uRadius, length(rel));
+  float fade = (1.0 - smoothstep(uRadius * 0.62, uRadius, length(rel))) * (uInner > 0.0 ? smoothstep(uInner * 0.65, uInner, length(rel)) : 1.0);
   float size = keep * fade * (0.7 + 0.6 * aRand.y);
 
   float ang = aRand.z * 6.2831853;
@@ -142,20 +196,34 @@ const VERTEX_MAIN = /* glsl */ `
   float sway = (gust - 0.38) * 0.85 + sin(uTime * 2.3 + aRand.w * 6.2831853) * 0.1;
   p.xz += uWindDir * sway * tip * tip * 0.42;
   p.y *= 1.0 - abs(sway) * tip * 0.12; // bending shortens the blade a little
+  // Blades bend away and flatten around the player's feet.
+  float trodden = 1.0 - smoothstep(0.2, 0.75, length(rel));
+  p.xz += rel / max(length(rel), 1e-3) * trodden * tip * 0.3;
+  p.y *= 1.0 - 0.6 * trodden;
 
   vec3 transformed = vec3(wxz.x + p.x * size, ground.r + p.y * size - 0.02, wxz.y + p.z * size);
 
   vec3 grassCol = fieldGrassColor(wxz);
+  // Contact shading baked into the ground data: blades under trees and beside rocks are darker.
+  grassCol *= mix(vec3(1.0), vec3(0.5, 0.56, 0.68), ground.a);
   #ifdef FLOWERS
     int ci = int(floor(aRand.y * 3.999));
     vec3 head = uFlowerColors[0];
     if (ci == 1) head = uFlowerColors[1];
     if (ci == 2) head = uFlowerColors[2];
     if (ci == 3) head = uFlowerColors[3];
-    vFieldColor = mix(grassCol * 0.8, head, aPart);
+    // Petals deepen toward their base; the centre is gold (or deep plum on the yellow ones).
+    float along = fract(aPart);
+    vec3 petal = head * (0.78 + 0.3 * along);
+    vec3 centre = ci == 1 ? vec3(0.55, 0.3, 0.18) : vec3(1.0, 0.78, 0.25);
+    vFieldColor = aPart < 0.5 ? grassCol * 0.8 : (aPart < 1.999 ? petal : centre);
   #else
-    // Roots match the ground exactly so clumps never read as dark blobs; tips are lighter and warmer.
-    vFieldColor = mix(grassCol * 0.95, grassCol * vec3(1.28, 1.25, 1.1), tip) * (0.92 + 0.16 * aRand.w);
+    // Roots sit just darker than the ground (depth between blades); tips are lighter and warmer.
+    // Each clump leans a little yellow or blue, and blades turned toward the sun are lighter.
+    vec3 hue = mix(vec3(0.94, 1.0, 1.08), vec3(1.1, 1.04, 0.86), aRand.w);
+    vec2 faceW = mat2(ca, -sa, sa, ca) * aFace;
+    float facing = abs(dot(faceW, normalize(uSunDirV.xz + 1e-4)));
+    vFieldColor = mix(grassCol * 0.84, grassCol * vec3(1.3, 1.27, 1.1), tip) * hue * (0.9 + 0.2 * facing);
   #endif
   // Tips glow when the low sun is behind them (light through the blade).
   vec3 toFrag = normalize(transformed - cameraPosition);
@@ -168,11 +236,12 @@ export function createField(
   atmosphere: Atmosphere,
   ground: GroundData,
 ): { mesh: THREE.Mesh; update: (focus: THREE.Vector3, time: number) => void; dispose: () => void } {
-  const base = kind === 'grass' ? grassClump() : flower();
+  const base = kind === 'grass' ? grassClump(settings.inner ? 'far' : 'near') : flower();
   const geo = new THREE.InstancedBufferGeometry();
   geo.index = base.index;
   geo.setAttribute('position', base.getAttribute('position'));
   geo.setAttribute('aPart', base.getAttribute('aPart'));
+  geo.setAttribute('aFace', base.getAttribute('aFace'));
   // Real (upward) normals: without a normal attribute three.js silently switches to flat
   // shading, which lights every blade differently.
   const up = new Float32Array(base.getAttribute('position').count * 3);
@@ -180,7 +249,7 @@ export function createField(
   geo.setAttribute('normal', new THREE.BufferAttribute(up, 3));
 
   const wrap = settings.radius * 2;
-  const r = rand(kind === 'grass' ? 101 : 202);
+  const r = rand(kind === 'grass' ? (settings.inner ? 303 : 101) : 202);
   const bases = new Float32Array(settings.count * 2);
   const rands = new Float32Array(settings.count * 4);
   for (let i = 0; i < settings.count; i++) {
@@ -194,17 +263,19 @@ export function createField(
 
   const uniforms: Record<string, THREE.IUniform> = {
     ...paletteUniforms(),
+    ...pathUniforms(),
     bqNoise: { value: getNoiseTexture() },
     bqGround: { value: ground.texture },
     bqGroundExtent: { value: ground.extent },
     uFocus: { value: new THREE.Vector2() },
     uWrap: { value: wrap },
     uRadius: { value: settings.radius },
+    uInner: { value: settings.inner ?? 0 },
     uTime: { value: 0 },
     uWindDir: { value: new THREE.Vector2(0.8, 0.6).normalize() },
     uSunDirV: atmosphere.uniforms.bqSunDir,
     uSunColorF: { value: new THREE.Color() },
-    uMaxHeight: { value: kind === 'grass' ? 0.55 : 0.44 },
+    uMaxHeight: { value: kind === 'grass' ? 0.6 : 0.44 },
     uFlowerColors: { value: FLOWER_COLORS.map((c) => new THREE.Color(c)) },
   };
 
@@ -228,9 +299,10 @@ export function createField(
       );
   };
   material.customProgramCacheKey = () => 'bq-field-' + kind;
+  const name = kind === 'grass' && settings.inner ? 'grassFar' : kind;
 
   const mesh = new THREE.Mesh(geo, material);
-  mesh.name = kind;
+  mesh.name = name;
   mesh.frustumCulled = false; // the field always surrounds the camera
   atmosphere.adopt(mesh, { cast: false, receive: true });
 

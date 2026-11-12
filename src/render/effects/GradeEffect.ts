@@ -58,7 +58,7 @@ export const DEFAULT_GRADE: GradeSettings = {
   gamma: [1.0, 1.0, 1.0],
   gain: [1.02, 1.0, 0.98],
   /** Multipliers: shadows lean violet-blue, highlights lean gold. */
-  shadowTint: [0.94, 0.95, 1.08],
+  shadowTint: [0.92, 0.95, 1.1],
   highlightTint: [1.05, 1.01, 0.93],
   saturation: 1.04,
   contrast: 1.12,

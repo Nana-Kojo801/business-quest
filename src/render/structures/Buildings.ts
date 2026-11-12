@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { STRUCTURES, heightAt, type Structure } from '../../core';
-import { OCCLUSION_FADE, OCCLUSION_FADE_PARS } from '../flora/Trees';
+import { addFade } from '../fade';
 import type { Atmosphere } from '../sky/Atmosphere';
 
 /**
@@ -365,21 +365,38 @@ function stall(): Parts {
   return { body, glow };
 }
 
+/** A stepped stone footing with a bevelled top: used under posts so they sit into the ground. */
+function footing(size: number): THREE.BufferGeometry[] {
+  return [
+    paint(at(oct(size * 0.62, size * 0.7, 0.12), 0, 0.02, 0), C.stoneDark, Mat.Stone, C.stoneDark),
+    paint(at(oct(size * 0.46, size * 0.56, 0.2), 0, 0.18, 0), C.stoneDark, Mat.Stone, C.stone),
+    paint(at(oct(size * 0.3, size * 0.46, 0.07), 0, 0.315, 0), C.stone, Mat.Stone),
+  ];
+}
+
 function lantern(): Parts {
-  const body: THREE.BufferGeometry[] = [];
+  const body: THREE.BufferGeometry[] = [...footing(0.5)];
   const glow: THREE.BufferGeometry[] = [];
-  body.push(paint(at(box(0.36, 0.28, 0.36), 0, 0.08, 0), C.stoneDark, Mat.Stone, C.stone)); // stone footing
-  body.push(paint(at(new THREE.CylinderGeometry(0.065, 0.085, 2.0, 8), 0, 1.15, 0), C.timberDark, Mat.Wood, C.timber));
-  for (const y of [0.35, 1.9]) body.push(paint(at(new THREE.CylinderGeometry(0.1, 0.1, 0.07, 8), 0, y, 0), C.iron, Mat.Metal));
-  body.push(paint(at(new THREE.IcosahedronGeometry(0.07, 0), 0, 2.2, 0), C.gold, Mat.Metal)); // finial
-  // Curved iron arm reaching toward the path.
-  const arm = new THREE.TorusGeometry(0.3, 0.022, 5, 10, Math.PI / 2);
+  body.push(paint(at(oct(0.06, 0.08, 1.95), 0, 1.3, 0), C.timberDark, Mat.Wood, C.timber));
+  // Iron collar near the base, a carved knuckle mid-way, and a capital under the finial.
+  body.push(paint(at(oct(0.1, 0.1, 0.09), 0, 0.42, 0), C.iron, Mat.Metal));
+  body.push(paint(at(oct(0.095, 0.095, 0.03), 0, 0.48, 0), C.gold, Mat.Metal));
+  body.push(paint(at(new THREE.SphereGeometry(0.085, 8, 6).scale(1, 0.7, 1), 0, 1.25, 0), C.timberDark, Mat.Wood));
+  body.push(paint(at(oct(0.11, 0.075, 0.1), 0, 2.28, 0), C.iron, Mat.Metal));
+  body.push(paint(at(oct(0.06, 0.1, 0.06), 0, 2.36, 0), C.iron, Mat.Metal));
+  body.push(paint(at(new THREE.ConeGeometry(0.05, 0.16, 8), 0, 2.47, 0), C.gold, Mat.Metal)); // finial
+  // Curved iron arm reaching toward the path, with a scroll brace beneath it.
+  const arm = new THREE.TorusGeometry(0.3, 0.024, 6, 12, Math.PI / 2);
   arm.rotateY(-Math.PI / 2);
-  body.push(paint(at(arm, 0, 1.75, 0.3), C.iron, Mat.Metal));
-  body.push(paint(at(box(0.02, 0.1, 0.02), 0, 1.98, 0.58), C.iron, Mat.Metal));
+  body.push(paint(at(arm, 0, 1.85, 0.3), C.iron, Mat.Metal));
+  const brace = new THREE.TorusGeometry(0.14, 0.016, 5, 12, Math.PI * 1.3);
+  brace.rotateZ(-0.4).rotateY(-Math.PI / 2);
+  body.push(paint(at(brace, 0, 1.92, 0.16), C.iron, Mat.Metal));
+  body.push(paint(at(new THREE.IcosahedronGeometry(0.03, 1), 0, 2.15, 0.6), C.gold, Mat.Metal));
+  body.push(paint(at(box(0.02, 0.06, 0.02), 0, 2.1, 0.6), C.iron, Mat.Metal));
   const lamp = hangingLamp(1);
-  lamp.body.forEach((g) => body.push(at(g, 0, 1.94, 0.6)));
-  lamp.glow.forEach((g) => glow.push(at(g, 0, 1.94, 0.6)));
+  lamp.body.forEach((g) => body.push(at(g, 0, 2.06, 0.6)));
+  lamp.glow.forEach((g) => glow.push(at(g, 0, 2.06, 0.6)));
   return { body, glow };
 }
 
@@ -395,10 +412,13 @@ function arrowBoard(len: number) {
 }
 
 function signpost(): Parts {
-  const body: THREE.BufferGeometry[] = [];
-  body.push(paint(at(new THREE.CylinderGeometry(0.07, 0.09, 2.0, 8), 0, 0.95, 0), C.timberDark, Mat.Wood, C.timber));
-  body.push(paint(at(new THREE.ConeGeometry(0.11, 0.18, 8), 0, 2.03, 0), C.timberDark, Mat.Wood));
-  for (const [y, ang, len] of [[1.65, 0.9, 1.0], [1.35, -1.4, 0.9], [1.05, 2.4, 0.75]]) {
+  const body: THREE.BufferGeometry[] = [...footing(0.55)];
+  body.push(paint(at(oct(0.065, 0.085, 1.85), 0, 1.25, 0), C.timberDark, Mat.Wood, C.timber));
+  body.push(paint(at(oct(0.1, 0.1, 0.08), 0, 0.42, 0), C.iron, Mat.Metal));
+  // A little pitched cap keeps the rain off the post.
+  body.push(paint(at(new THREE.ConeGeometry(0.15, 0.2, 4).rotateY(Math.PI / 4), 0, 2.27, 0), C.roof, Mat.Tile, C.roofLight));
+  body.push(paint(at(new THREE.IcosahedronGeometry(0.035, 1), 0, 2.39, 0), C.gold, Mat.Metal));
+  for (const [y, ang, len] of [[1.9, 0.9, 1.0], [1.6, -1.4, 0.9], [1.3, 2.4, 0.75]]) {
     body.push(paint(at(arrowBoard(len).translate(0.06, 0, 0), 0, y, 0, ang), C.crate, Mat.Wood));
   }
   // A few stones at the foot.
@@ -482,18 +502,18 @@ export function createBuildings(atmosphere: Atmosphere) {
   const uniforms = { uPlayerPos: { value: new THREE.Vector3() } };
   const bodyMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 });
   bodyMaterial.onBeforeCompile = (shader) => {
-    shader.uniforms.uPlayerPos = uniforms.uPlayerPos;
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>\n${SURFACE_VERTEX_PARS}`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>\n${SURFACE_VERTEX}`);
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\n${SURFACE_FRAGMENT_PARS}\n${OCCLUSION_FADE_PARS}`)
-      .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>\n${OCCLUSION_FADE}`)
+      .replace('#include <common>', `#include <common>\n${SURFACE_FRAGMENT_PARS}`)
       .replace('#include <color_fragment>', `#include <color_fragment>\n${SURFACE_FRAGMENT}`);
   };
   bodyMaterial.customProgramCacheKey = () => 'bq-building';
   // Glowing parts: unlit colours above 1.0, so the bloom picks them up.
   const glowMaterial = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
+  addFade(bodyMaterial, uniforms);
+  addFade(glowMaterial, uniforms);
 
   const geos: THREE.BufferGeometry[] = [];
   const spinners: { mesh: THREE.Object3D; baseY: number; speed: number; tilt: number }[] = [];

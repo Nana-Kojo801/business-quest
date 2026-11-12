@@ -223,8 +223,8 @@ test.describe('quality tiers', () => {
     const errors = await load(page, `?quality=${tier}&adaptive=0`, 3);
     const d = await readDebug(page);
     expect(d.quality.tier).toBe(tier);
-    // Low skips the painterly pass; the others render scene, painterly, final.
-    expect(d.passes.length).toBe(tier === 'low' ? 2 : 3);
+    // Only high adds the painterly pass; low and medium render scene, final.
+    expect(d.passes.length).toBe(tier === 'high' ? 3 : 2);
     expect(await distinctColours(page)).toBeGreaterThan(20);
     expect(errors).toEqual([]);
   });
