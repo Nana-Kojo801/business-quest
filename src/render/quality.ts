@@ -32,12 +32,15 @@ export interface TierSettings {
   grass: { count: number; radius: number };
   /** Flowers drawn around the player. */
   flowers: { count: number; radius: number };
+  /** Simple trees on the distant mountain slopes, and decorative small stones. */
+  farTrees: number;
+  pebbles: number;
 }
 
 export const TIER_SETTINGS: Record<Tier, TierSettings> = {
-  low: { maxPixelRatio: 1, minScale: 0.6, painterlyRadius: 0, bloomLevels: 4, multisampling: 0, shadowMapSize: 0, grass: { count: 2400, radius: 11 }, flowers: { count: 260, radius: 11 } },
-  medium: { maxPixelRatio: 1.5, minScale: 0.7, painterlyRadius: 2, bloomLevels: 6, multisampling: 0, shadowMapSize: 1024, grass: { count: 6000, radius: 16 }, flowers: { count: 700, radius: 16 } },
-  high: { maxPixelRatio: 2, minScale: 0.8, painterlyRadius: 3, bloomLevels: 8, multisampling: 4, shadowMapSize: 2048, grass: { count: 10000, radius: 20 }, flowers: { count: 1200, radius: 20 } },
+  low: { maxPixelRatio: 1, minScale: 0.6, painterlyRadius: 0, bloomLevels: 4, multisampling: 0, shadowMapSize: 0, grass: { count: 2400, radius: 11 }, flowers: { count: 260, radius: 11 }, farTrees: 200, pebbles: 30 },
+  medium: { maxPixelRatio: 1.5, minScale: 0.7, painterlyRadius: 2, bloomLevels: 6, multisampling: 0, shadowMapSize: 1024, grass: { count: 6000, radius: 16 }, flowers: { count: 700, radius: 16 }, farTrees: 450, pebbles: 70 },
+  high: { maxPixelRatio: 2, minScale: 0.8, painterlyRadius: 3, bloomLevels: 8, multisampling: 4, shadowMapSize: 2048, grass: { count: 10000, radius: 20 }, flowers: { count: 1200, radius: 20 }, farTrees: 800, pebbles: 110 },
 };
 
 const TARGET_FRAME_MS = 1000 / 55; // aim for ~55+ fps

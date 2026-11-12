@@ -41,7 +41,7 @@ export function bakeGroundData(): GroundData {
       grass *= 0.65 + 0.35 * smoothstep(0.25, 0.6, noise2(x * 0.12, z * 0.12, 31));
 
       // Flowers grow in drifts within the grass.
-      const flowers = grass * smoothstep(0.58, 0.78, noise2(x * 0.07, z * 0.07, 37));
+      const flowers = grass * smoothstep(0.5, 0.7, noise2(x * 0.07, z * 0.07, 37));
 
       const k = (j * SIZE + i) * 4;
       values[k] = h;

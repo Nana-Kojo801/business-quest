@@ -28,6 +28,10 @@ function hash01(ix: number, iz: number, seed: number) {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 
+function pickVariant(h: number) {
+  return h < 0.55 ? 0 : h < 0.86 ? 1 : 2;
+}
+
 function slopeAt(x: number, z: number) {
   const e = 0.8;
   return Math.hypot(heightAt(x + e, z) - heightAt(x - e, z), heightAt(x, z + e) - heightAt(x, z - e)) / (2 * e);
@@ -56,7 +60,9 @@ function generate(): Obstacle[] {
       const r = Math.hypot(x, z);
       if (r > 62) continue;
       const grove = smoothstep(0.48, 0.68, fbm2(x * 0.028, z * 0.028, 3, 21));
-      const rim = smoothstep(33, 44, r);
+      // Thinner straight ahead of the starting view, so the forest doesn't wall off the vista.
+      const ahead = Math.max(0, -z / Math.max(r, 1e-6));
+      const rim = smoothstep(33, 44, r) * (1 - 0.8 * ahead * ahead);
       const density = Math.min(0.92, grove * 0.75 + rim * 0.8);
       if (hash01(ix, iz, 3) > density) continue;
       if (isClearZone(x, z, 0) || slopeAt(x, z) > 0.55) continue;
@@ -68,7 +74,8 @@ function generate(): Obstacle[] {
         r: 0.45 * scale,
         scale,
         rot: hash01(ix, iz, 5) * Math.PI * 2,
-        variant: Math.floor(hash01(ix, iz, 6) * 3),
+        // Mostly round broadleaf, some tall, blossom as an occasional accent.
+        variant: pickVariant(hash01(ix, iz, 6)),
       });
     }
   }

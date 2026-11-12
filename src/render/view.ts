@@ -3,6 +3,8 @@ import { heightAt, type PlayerId, type WorldState } from '../core';
 import { createTerrain } from './terrain/Terrain';
 import { createWater } from './water/Water';
 import { createField } from './flora/Field';
+import { createRocks } from './flora/Rocks';
+import { createTrees } from './flora/Trees';
 import { bakeGroundData, type GroundData } from './terrain/groundData';
 import { Pipeline } from './pipeline';
 import { QualityManager, initialTier } from './quality';
@@ -31,6 +33,8 @@ export class WorldView {
   private water: ReturnType<typeof createWater>;
   private ground: GroundData;
   private fields: ReturnType<typeof createField>[] = [];
+  private trees: ReturnType<typeof createTrees> | null = null;
+  private rocks: ReturnType<typeof createRocks> | null = null;
 
   constructor(private container: HTMLElement) {
     // Antialiasing, tone mapping and colour output are handled by the post-processing pipeline.
@@ -97,11 +101,19 @@ export class WorldView {
     terrain.castShadow = false;
   }
 
-  /** (Re)build grass and flowers for the current quality tier. */
+  /** (Re)build vegetation and rocks for the current quality tier. */
   private buildFields() {
     for (const f of this.fields) {
       this.scene.remove(f.mesh);
       f.dispose();
+    }
+    if (this.trees) {
+      this.scene.remove(this.trees.group);
+      this.trees.dispose();
+    }
+    if (this.rocks) {
+      this.scene.remove(this.rocks.group);
+      this.rocks.dispose();
     }
     const tier = this.quality.settings;
     this.fields = [
@@ -109,6 +121,9 @@ export class WorldView {
       createField('flowers', tier.flowers, this.atmosphere, this.ground),
     ];
     for (const f of this.fields) this.scene.add(f.mesh);
+    this.trees = createTrees(this.atmosphere, { farCount: tier.farTrees });
+    this.rocks = createRocks(this.atmosphere, tier.pebbles);
+    this.scene.add(this.trees.group, this.rocks.group);
   }
 
   resize() {
@@ -174,6 +189,7 @@ export class WorldView {
     this.atmosphere.update(time, this.camera, this.focus);
     this.water.update(time);
     for (const f of this.fields) f.update(this.focus, time);
+    this.trees?.update(time, this.camera, this.focus);
     this.pipeline.render(dt);
   }
 }

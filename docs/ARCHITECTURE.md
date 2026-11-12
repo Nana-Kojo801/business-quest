@@ -80,3 +80,19 @@ GPUs. Use it for any new procedural shader.
 `src/render/water/Water.ts` draws the lake: colour by depth (baked per vertex from `heightAt`),
 sky reflection using the shared sky colour function, sun glints that catch the bloom, breathing
 shore foam, and the shared atmospheric fog.
+
+## Vegetation and rocks
+
+- `src/core/flora.ts`: deterministic tree and boulder placement (clear of paths, spawn, water
+  and the plateau top). `src/core/collision.ts`: walkability including trees and rocks; players
+  slide around them.
+- `src/render/terrain/groundData.ts`: a texture baked at startup with height, grass density and
+  flower density, read by vegetation vertex shaders.
+- `src/render/flora/Field.ts`: grass and flowers wrap around the player on the GPU (no per-frame
+  CPU work). Geometry must carry a normal attribute, or three.js silently flat-shades it.
+- `src/render/flora/Trees.ts`: instanced code-built trees (three shapes) with crown-centred
+  normals for soft painted shading, wind sway, backlit rim glow, and a dither dissolve for
+  anything between the camera and the player. Simple trees cover the lower mountain slopes.
+- `src/render/flora/Rocks.ts`: instanced faceted boulders with moss, and small shore/path stones.
+
+Counts scale with the quality tier (`grass`, `flowers`, `farTrees`, `pebbles`).

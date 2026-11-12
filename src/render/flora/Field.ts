@@ -68,8 +68,8 @@ function flower(): THREE.BufferGeometry {
   const pos: number[] = [];
   const part: number[] = [];
   const idx: number[] = [];
-  const h = 0.34;
-  const sw = 0.018;
+  const h = 0.42;
+  const sw = 0.022;
   pos.push(-sw, 0, 0, sw, 0, 0, -sw * 0.6, h, 0, sw * 0.6, h, 0);
   part.push(0, 0, 0, 0);
   idx.push(0, 1, 2, 1, 3, 2);
@@ -79,7 +79,7 @@ function flower(): THREE.BufferGeometry {
   const petals = 6;
   for (let i = 0; i < petals * 2; i++) {
     const a = (i / (petals * 2)) * Math.PI * 2;
-    const rr = i % 2 === 0 ? 0.075 : 0.035; // alternating tips and notches
+    const rr = i % 2 === 0 ? 0.11 : 0.05; // alternating tips and notches
     pos.push(Math.cos(a) * rr, h + 0.01 + Math.sin(a) * rr * 0.35, Math.sin(a) * rr);
     part.push(1);
   }
@@ -204,7 +204,7 @@ export function createField(
     uWindDir: { value: new THREE.Vector2(0.8, 0.6).normalize() },
     uSunDirV: atmosphere.uniforms.bqSunDir,
     uSunColorF: { value: new THREE.Color() },
-    uMaxHeight: { value: kind === 'grass' ? 0.55 : 0.36 },
+    uMaxHeight: { value: kind === 'grass' ? 0.55 : 0.44 },
     uFlowerColors: { value: FLOWER_COLORS.map((c) => new THREE.Color(c)) },
   };
 

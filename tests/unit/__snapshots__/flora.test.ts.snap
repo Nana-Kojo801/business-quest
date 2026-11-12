@@ -2,7 +2,7 @@
 
 exports[`flora layout > places a stable number of trees and boulders (guards cross-machine agreement) 1`] = `
 {
-  "boulders": 35,
-  "trees": 307,
+  "boulders": 38,
+  "trees": 271,
 }
 `;
