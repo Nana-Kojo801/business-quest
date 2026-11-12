@@ -4,53 +4,60 @@ export interface Look {
   hair: string;
   hairStyle: 'short' | 'bun' | 'long';
   eyes: string;
+  /** Shirt / main garment. */
   top: string;
+  /** Vest, apron or robe trim. */
   accent: string;
+  /** Belt, sash and small trims. */
+  trim: string;
   legs: string;
   boots: string;
-  /** Optional cape colour. */
   cape?: string;
-  /** A long robe instead of a short tunic hem. */
   robe?: boolean;
-  /** Optional wide-brimmed hat colour. */
   hat?: string;
   /** Torso width multiplier. */
   build?: number;
+  /** Gentler eyes for older characters. */
+  calm?: boolean;
 }
 
 export const LOOKS: Record<string, Look> = {
   player: {
-    skin: '#ffd9c2',
-    hair: '#6b3a2a',
+    skin: '#ffdcc6',
+    hair: '#7a3f2c',
     hairStyle: 'short',
-    eyes: '#2f6f8f',
-    top: '#e4d3b2',
+    eyes: '#2f86a8',
+    top: '#efe4cf',
     accent: '#2f8f93',
-    legs: '#6a4a3a',
+    trim: '#e2b45a',
+    legs: '#5d4436',
     boots: '#4a3024',
     cape: '#d04c42',
   },
   merchant: {
-    skin: '#e8b48f',
-    hair: '#2e2230',
+    skin: '#eab792',
+    hair: '#33243a',
     hairStyle: 'bun',
-    eyes: '#5a3a24',
-    top: '#e9a046',
+    eyes: '#7a4a2a',
+    top: '#f0a84e',
     accent: '#5f9a4e',
+    trim: '#c9543e',
     legs: '#5a4636',
     boots: '#3e2a20',
-    build: 1.18,
+    build: 1.15,
   },
   keeper: {
-    skin: '#ffe2cf',
-    hair: '#e9edf4',
+    skin: '#ffe4d2',
+    hair: '#eef1f7',
     hairStyle: 'long',
-    eyes: '#4a5fa8',
+    eyes: '#5a6fc0',
     top: '#3f5ea8',
-    accent: '#e8bb5e',
+    accent: '#2f4380',
+    trim: '#e8bb5e',
     legs: '#2f3f72',
     boots: '#2a2230',
     robe: true,
     hat: '#2f4380',
+    calm: true,
   },
 };

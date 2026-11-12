@@ -35,6 +35,7 @@ export class WorldView {
   private npcs: { npc: Npc; character: Character; yaw: number }[] = [];
   private focus = new THREE.Vector3();
   private cameraGround = 0;
+  private closeCam = new URLSearchParams(location.search).get('cam') === 'close';
   private water: ReturnType<typeof createWater>;
   private buildings: ReturnType<typeof createBuildings>;
   private ground: GroundData;
@@ -202,10 +203,14 @@ export class WorldView {
     const me = followId ? this.players.get(followId) : undefined;
     for (const v of this.npcs) {
       let target = v.npc.rot;
+      let near = false;
       if (me) {
         const dx = me.root.position.x - v.npc.x;
         const dz = me.root.position.z - v.npc.z;
-        if (dx * dx + dz * dz < 5.5 * 5.5) target = Math.atan2(dx, dz);
+        if (dx * dx + dz * dz < 5.5 * 5.5) {
+          target = Math.atan2(dx, dz);
+          near = true;
+        }
       }
       let d = target - v.yaw;
       d = Math.atan2(Math.sin(d), Math.cos(d));
@@ -213,7 +218,8 @@ export class WorldView {
       v.yaw += d * Math.min(1, dt * 1.6);
       v.character.root.rotation.y = v.yaw;
       const headTurn = target - v.yaw;
-      v.character.lookTarget = THREE.MathUtils.clamp(Math.atan2(Math.sin(headTurn), Math.cos(headTurn)), -1, 1);
+      // Near the player: look at them. Otherwise glance around on their own.
+      v.character.lookTarget = near ? THREE.MathUtils.clamp(Math.atan2(Math.sin(headTurn), Math.cos(headTurn)), -1, 1) : null;
       v.character.update(dt, performance.now() / 1000, 0);
     }
 
@@ -223,13 +229,15 @@ export class WorldView {
       const fx = Math.sin(this.cameraYaw);
       const fz = -Math.cos(this.cameraYaw);
       // Placeholder framing (refined with the camera work later): low enough to show the sky.
-      const back = 9;
-      const ahead = 4;
+      // ?cam=close is a debug close-up for judging characters.
+      const close = this.closeCam;
+      const back = close ? 3.2 : 9;
+      const ahead = close ? 0.4 : 4;
       // Follow the ground height smoothly so small bumps don't jolt the camera.
       const ground = t.y;
       this.cameraGround += (ground - this.cameraGround) * Math.min(1, dt * 4);
-      this.camera.position.set(t.x - fx * back, this.cameraGround + 4.5, t.z - fz * back);
-      this.camera.lookAt(t.x + fx * ahead, this.cameraGround + 1.2, t.z + fz * ahead);
+      this.camera.position.set(t.x - fx * back, this.cameraGround + (close ? 1.55 : 4.5), t.z - fz * back);
+      this.camera.lookAt(t.x + fx * ahead, this.cameraGround + (close ? 1.0 : 1.2), t.z + fz * ahead);
       this.focus.copy(t);
     }
 

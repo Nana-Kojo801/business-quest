@@ -116,9 +116,17 @@ quality tier (`particles`, `lightShafts`).
 
 ## Characters
 
-`src/render/characters/Character.ts` builds anime-style characters from code: a pivot skeleton
-(hips, torso, head, arms, legs, cape), one merged vertex-coloured mesh per pivot, a shared
-three-band cel-shading material with a sunlit rim, ink outlines (inverted hull), and a soft
-contact shadow. Animation is procedural: stride driven by distance travelled, idle breathing and
-glances, a cape that lifts with speed. Appearances live in `looks.ts`. Villagers are placed in
-`src/core/npcs.ts` (they block movement) and turn to face a nearby player.
+`src/render/characters/Character.ts` builds anime-style characters from code:
+- Shape: smooth lathe profiles for body and limbs (profiles are normalised bottom-to-top so faces
+  point outward), clothing with folds, hair from tapered curving strands with a glossy band, and
+  a hand-drawn face (`face.ts`, canvas atlas with a blink frame) wrapped onto the shaped head.
+- Skeleton: hips > torso > head / arms / two-part cape; legs > shins > feet; spring-driven back
+  hair and cowlick.
+- Shading: soft cel ramp, sunlit rim, thin ink outlines (inverted hull), contact shadow.
+- Motion: eased speed; weight shift; hips/torso counter-rotation; arm lag; knee lift, foot roll
+  and toe-off; leaning into acceleration and turns; head steadied and leading turns; springs on
+  cape and hair that overshoot and settle; idle breathing, glances and blinking.
+
+Appearances live in `looks.ts`. Villagers are placed in `src/core/npcs.ts` (they block
+movement), turn to face a nearby player, and glance around otherwise. `?cam=close` is a debug
+close-up camera for judging characters.
