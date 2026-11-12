@@ -52,7 +52,7 @@ export class Game {
     }
     if (steps === MAX_STEPS_PER_FRAME) this.accumulator = 0; // fell too far behind; drop time
 
-    this.view.render(this.prev, this.sim.state, this.accumulator / TICK_DT, this.localPlayer);
+    this.view.render(this.prev, this.sim.state, this.accumulator / TICK_DT, this.localPlayer, dt);
     this.frames++;
   }
 }

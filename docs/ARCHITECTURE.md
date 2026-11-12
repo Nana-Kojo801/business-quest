@@ -28,3 +28,22 @@ devices -> controller -> transport -> simulation -> view
 3. Clients apply snapshots and keep predicting their own player locally.
 
 No changes to core rules or rendering are needed for that.
+
+## Rendering
+
+`src/render/pipeline.ts` runs each frame through:
+
+```
+scene (HDR) -> painterly filter -> bloom -> tone mapping (Khronos Neutral) -> colour grade -> screen
+```
+
+`src/render/quality.ts` picks a tier (phones start on medium, desktops on high), then lowers
+render resolution when frames are slow and drops a tier if that is not enough.
+
+| Tier | Max pixel ratio | Painterly radius | MSAA |
+|---|---|---|---|
+| low | 1 | off | off |
+| medium | 1.5 | 2 | off |
+| high | 2 | 3 | 4x |
+
+URL options: `?quality=low|medium|high`, `?adaptive=0`, `?debug=1` (fps overlay).

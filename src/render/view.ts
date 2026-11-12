@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import type { PlayerId, WorldState } from '../core';
+import { Pipeline } from './pipeline';
+import { QualityManager, initialTier } from './quality';
 
 /**
  * Draws the world. Reads game state every frame and never changes it.
@@ -12,16 +14,32 @@ export class WorldView {
   /** Camera yaw around the vertical axis; 0 looks toward -z. */
   cameraYaw = 0;
 
+  readonly quality: QualityManager;
+  readonly pipeline: Pipeline;
   private players = new Map<PlayerId, THREE.Object3D>();
   private playerGeo = new THREE.SphereGeometry(0.5, 32, 16);
-  private playerMat = new THREE.MeshStandardMaterial({ color: '#ffc46b', emissive: '#ff8a3d', emissiveIntensity: 0.4 });
+  private playerMat = new THREE.MeshStandardMaterial({ color: '#ffc46b', emissive: '#ff8a3d', emissiveIntensity: 1.6 });
 
   constructor(private container: HTMLElement) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    // Antialiasing, tone mapping and colour output are handled by the post-processing pipeline.
+    this.renderer = new THREE.WebGLRenderer({
+      antialias: false,
+      stencil: false,
+      depth: false,
+      powerPreference: 'high-performance',
+    });
+    this.renderer.toneMapping = THREE.NoToneMapping;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(this.renderer.domElement);
+
+    const params = new URLSearchParams(location.search);
+    const isTouch = matchMedia('(pointer: coarse)').matches;
+    this.quality = new QualityManager(initialTier(params, isTouch), params.get('adaptive') !== '0');
+    this.pipeline = new Pipeline(this.renderer, this.scene, this.camera, this.quality.settings);
+    this.quality.onChange = (_state, tierChanged) => {
+      if (tierChanged) this.pipeline.applyTier(this.quality.settings);
+      this.resize();
+    };
 
     this.buildPlaceholderWorld();
     window.addEventListener('resize', () => this.resize());
@@ -45,11 +63,16 @@ export class WorldView {
     // Temporary markers so movement is visible until the real world is built.
     const markerMat = new THREE.MeshStandardMaterial({ color: '#8a7fb0', roughness: 0.8 });
     const markerGeo = new THREE.ConeGeometry(0.35, 1.2, 6);
+    // Every fifth marker is a glowing crystal, to show off bloom until real props exist.
+    const crystalMat = new THREE.MeshStandardMaterial({ color: '#9fe8ff', emissive: '#5cd6ff', emissiveIntensity: 2.2 });
+    const crystalGeo = new THREE.OctahedronGeometry(0.35);
     for (let i = 0; i < 40; i++) {
       const a = i * 2.399963; // golden-angle spiral
       const r = 2.5 + Math.sqrt(i) * 3.6;
-      const m = new THREE.Mesh(markerGeo, markerMat);
-      m.position.set(Math.cos(a) * r, 0.6, Math.sin(a) * r);
+      const crystal = i % 5 === 2;
+      const m = new THREE.Mesh(crystal ? crystalGeo : markerGeo, crystal ? crystalMat : markerMat);
+      m.position.set(Math.cos(a) * r, crystal ? 0.9 : 0.6, Math.sin(a) * r);
+      if (crystal) m.scale.y = 1.8;
       s.add(m);
     }
   }
@@ -57,7 +80,8 @@ export class WorldView {
   resize() {
     const w = this.container.clientWidth;
     const h = this.container.clientHeight;
-    this.renderer.setSize(w, h, false);
+    this.renderer.setPixelRatio(this.quality.pixelRatio(window.devicePixelRatio));
+    this.pipeline.setSize(w, h);
     this.camera.aspect = w / h;
     // Portrait screens get a wider vertical field of view so the tall frame shows more ground ahead.
     this.camera.fov = this.camera.aspect < 1 ? 60 : 45;
@@ -68,7 +92,9 @@ export class WorldView {
    * Render one frame. `alpha` (0..1) blends between the previous and current
    * simulation states so motion stays smooth at any display refresh rate.
    */
-  render(prev: WorldState, curr: WorldState, alpha: number, followId: PlayerId | null) {
+  render(prev: WorldState, curr: WorldState, alpha: number, followId: PlayerId | null, dt: number) {
+    this.quality.sample(dt * 1000);
+
     // Add/remove meshes to match the players in state.
     for (const id of Object.keys(curr.players)) {
       if (!this.players.has(id)) {
@@ -101,6 +127,6 @@ export class WorldView {
       this.camera.lookAt(t.x + Math.sin(this.cameraYaw) * 2, 0.5, t.z - Math.cos(this.cameraYaw) * 2);
     }
 
-    this.renderer.render(this.scene, this.camera);
+    this.pipeline.render(dt);
   }
 }

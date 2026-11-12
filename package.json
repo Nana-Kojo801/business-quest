@@ -13,6 +13,7 @@
     "test:e2e": "playwright test --trace off"
   },
   "dependencies": {
+    "postprocessing": "^6.39.6",
     "three": "^0.187.0"
   },
   "devDependencies": {

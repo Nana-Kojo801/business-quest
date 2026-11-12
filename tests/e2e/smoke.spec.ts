@@ -1,30 +1,27 @@
 import { test, expect, type Page } from '@playwright/test';
 
-type Debug = { frames: number; player: { x: number; z: number } };
+type Debug = {
+  frames: number;
+  player: { x: number; z: number };
+  quality: { tier: string; scale: number; pixelRatio: number };
+  passes: string[];
+};
 const readDebug = (page: Page) => page.evaluate(() => (window as unknown as { __bq: Debug }).__bq);
 
-async function load(page: Page) {
+// CI and this test machine render on the CPU, so tests use the cheapest tier
+// unless they are testing tiers, and turn off adaptive changes for stability.
+async function load(page: Page, query = '?quality=low&adaptive=0', minFrames = 10) {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/');
-  await expect.poll(async () => (await readDebug(page))?.frames ?? 0).toBeGreaterThan(10);
+  await page.goto('/' + query);
+  await expect.poll(async () => (await readDebug(page))?.frames ?? 0, { timeout: 40_000 }).toBeGreaterThan(minFrames);
   return errors;
 }
 
-test('loads and renders a non-blank frame without errors', async ({ page }) => {
-  const errors = await load(page);
-  const canvas = page.locator('#app canvas');
-  await expect(canvas).toBeVisible();
-
-  const box = (await canvas.boundingBox())!;
-  const viewport = page.viewportSize()!;
-  expect(box.width).toBeCloseTo(viewport.width, 0);
-  expect(box.height).toBeCloseTo(viewport.height, 0);
-
-  // A rendered scene has many distinct colours; a blank or failed canvas has one or two.
-  const png = await canvas.screenshot();
-  const distinct = await page.evaluate(async (b64) => {
+async function distinctColours(page: Page) {
+  const png = await page.locator('#app canvas').screenshot();
+  return page.evaluate(async (b64) => {
     const img = new Image();
     img.src = `data:image/png;base64,${b64}`;
     await img.decode();
@@ -37,7 +34,21 @@ test('loads and renders a non-blank frame without errors', async ({ page }) => {
     for (let i = 0; i < data.length; i += 4 * 97) seen.add((data[i] << 16) | (data[i + 1] << 8) | data[i + 2]);
     return seen.size;
   }, png.toString('base64'));
-  expect(distinct).toBeGreaterThan(20);
+}
+
+test('loads and renders a non-blank frame without errors', async ({ page }) => {
+  test.setTimeout(60_000);
+  const errors = await load(page);
+  const canvas = page.locator('#app canvas');
+  await expect(canvas).toBeVisible();
+
+  const box = (await canvas.boundingBox())!;
+  const viewport = page.viewportSize()!;
+  expect(box.width).toBeCloseTo(viewport.width, 0);
+  expect(box.height).toBeCloseTo(viewport.height, 0);
+
+  // A rendered scene has many distinct colours; a blank or failed canvas has one or two.
+  expect(await distinctColours(page)).toBeGreaterThan(20);
 
   expect(errors).toEqual([]);
 });
@@ -83,4 +94,31 @@ test('touch drag moves the player', async ({ page }, info) => {
   }, { x, y });
   const after = await readDebug(page);
   expect(after.player.x).toBeGreaterThan(before.player.x + 0.3);
+});
+
+test.describe('quality tiers', () => {
+  // Correctness, not speed: a small viewport keeps the CPU renderer used in CI fast.
+  test.use({ viewport: { width: 270, height: 480 }, deviceScaleFactor: 1 });
+
+  for (const tier of ['low', 'medium', 'high'] as const) {
+  test(`renders on the ${tier} quality tier`, async ({ page }, info) => {
+    test.skip(info.project.name !== 'phone-portrait', 'tier rendering is device-independent');
+    test.setTimeout(60_000);
+    const errors = await load(page, `?quality=${tier}&adaptive=0`, 3);
+    const d = await readDebug(page);
+    expect(d.quality.tier).toBe(tier);
+    // Low skips the painterly pass; the others render scene, painterly, final.
+    expect(d.passes.length).toBe(tier === 'low' ? 2 : 3);
+    expect(await distinctColours(page)).toBeGreaterThan(20);
+    expect(errors).toEqual([]);
+  });
+  }
+});
+
+test('picks a starting tier by device and shows the debug overlay', async ({ page }, info) => {
+  test.setTimeout(60_000);
+  await load(page, '?debug=1&adaptive=0', 3);
+  const d = await readDebug(page);
+  expect(d.quality.tier).toBe(info.project.name === 'phone-portrait' ? 'medium' : 'high');
+  await expect(page.getByTestId('debug-overlay')).toContainText('fps');
 });
