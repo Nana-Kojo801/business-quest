@@ -151,3 +151,31 @@ test.describe('sky', () => {
     });
   }
 });
+
+test('walking toward the lake shows water', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', 'one viewport is enough');
+  test.setTimeout(90_000);
+  const errors = await load(page, '?quality=low&adaptive=0', 3);
+  await page.keyboard.down('KeyA');
+  await page.keyboard.down('KeyW');
+  await expect.poll(async () => (await readDebug(page)).player.x, { timeout: 60_000 }).toBeLessThan(-5);
+  await page.keyboard.up('KeyA');
+  await page.keyboard.up('KeyW');
+  const png = await page.locator('#app canvas').screenshot();
+  // Count clearly blue pixels (water) in the left half of the screen.
+  const blueShare = await page.evaluate(async (b64) => {
+    const img = new Image();
+    img.src = `data:image/png;base64,${b64}`;
+    await img.decode();
+    const c = document.createElement('canvas');
+    c.width = img.width; c.height = img.height;
+    const ctx = c.getContext('2d')!;
+    ctx.drawImage(img, 0, 0);
+    const d = ctx.getImageData(0, 0, Math.floor(img.width / 2), img.height).data;
+    let blue = 0;
+    for (let i = 0; i < d.length; i += 4) if (d[i + 2] > d[i] + 30 && d[i + 2] > d[i + 1] - 10) blue++;
+    return blue / (d.length / 4);
+  }, png.toString('base64'));
+  expect(blueShare).toBeGreaterThan(0.05);
+  expect(errors).toEqual([]);
+});

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { heightAt, type PlayerId, type WorldState } from '../core';
 import { createTerrain } from './terrain/Terrain';
+import { createWater } from './water/Water';
 import { Pipeline } from './pipeline';
 import { QualityManager, initialTier } from './quality';
 import { Atmosphere } from './sky/Atmosphere';
@@ -25,6 +26,7 @@ export class WorldView {
   private playerMat = new THREE.MeshStandardMaterial({ color: '#ffc46b', emissive: '#ff8a3d', emissiveIntensity: 1.6 });
   private focus = new THREE.Vector3();
   private cameraGround = 0;
+  private water: ReturnType<typeof createWater>;
 
   constructor(private container: HTMLElement) {
     // Antialiasing, tone mapping and colour output are handled by the post-processing pipeline.
@@ -57,6 +59,8 @@ export class WorldView {
       this.resize();
     };
 
+    this.water = createWater(this.atmosphere);
+    this.scene.add(this.water.mesh);
     this.buildPlaceholderWorld();
     window.addEventListener('resize', () => this.resize());
     this.resize();
@@ -145,7 +149,9 @@ export class WorldView {
       this.focus.copy(t);
     }
 
-    this.atmosphere.update(performance.now() / 1000, this.camera, this.focus);
+    const time = performance.now() / 1000;
+    this.atmosphere.update(time, this.camera, this.focus);
+    this.water.update(time);
     this.pipeline.render(dt);
   }
 }

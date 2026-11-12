@@ -70,3 +70,13 @@ browser computes identical heights; a snapshot test guards this. The simulation 
 players out of the lake and inside the valley (sliding along boundaries), and the renderer builds
 the ground mesh from it (`src/render/terrain/Terrain.ts`), colouring it in a shader: warm and
 cool grass patches, brush-stroke breakup, sandy shores, worn paths and rock on steep slopes.
+
+## Water and shared noise
+
+`src/render/noiseTexture.ts` bakes a tiling four-octave noise texture at startup. Shaders sample
+it (`bqNoiseA..D`, `bqFbm`) rather than computing noise per pixel, which is much cheaper on phone
+GPUs. Use it for any new procedural shader.
+
+`src/render/water/Water.ts` draws the lake: colour by depth (baked per vertex from `heightAt`),
+sky reflection using the shared sky colour function, sun glints that catch the bloom, breathing
+shore foam, and the shared atmospheric fog.
