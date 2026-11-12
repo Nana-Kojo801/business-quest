@@ -137,7 +137,7 @@ function drawBlossomCluster(lum: Ctx, mask: Ctx, ox: number, r: () => number) {
     const a = r() * Math.PI * 2;
     const d = Math.sqrt(r()) * 82 * (1 - depth * 0.3);
     const rad = 17 + r() * 9;
-    drawBlossom(lum, mask, cx + Math.cos(a) * d, cy + Math.sin(a) * d, Math.min(rad, 118 - d), r() * 6.28, 0.8 + depth * 0.2);
+    drawBlossom(lum, mask, cx + Math.cos(a) * d, cy + Math.sin(a) * d, Math.min(rad, 118 - d), r() * 6.28, 0.92 + depth * 0.14);
   }
 }
 

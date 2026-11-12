@@ -380,7 +380,8 @@ const CANOPY_LEAVES = /* glsl */ `
   #else
     if (a < 0.5) discard;
   #endif
-  diffuseColor.rgb *= mix(1.0, lt.r, vCard);
+  // Blossoms (second atlas cell) are lifted a little so they glow against the crown, never muddy it.
+  diffuseColor.rgb *= mix(1.0, lt.r * (vLeafUv.x > 0.5 ? 1.2 : 1.0), vCard);
   vec3 lp = vBqWorldPos;
   float clump = bqNoiseB(lp.xz * 2.2 + lp.y * 1.9) * 0.65 + bqNoiseC(lp.xz * 5.0 - lp.y * 3.1) * 0.35;
   diffuseColor.rgb *= mix(0.8 + 0.32 * smoothstep(0.25, 0.75, clump), 1.0, vCard);
@@ -442,7 +443,9 @@ export function createTrees(atmosphere: Atmosphere, settings: TreeSettings) {
       .replace('#include <emissivemap_fragment>', CANOPY_GLOW);
   };
   canopyMaterial.customProgramCacheKey = () => 'bq-canopy' + (settings.alphaToCoverage ? '-a2c' : '');
-  addFade(canopyMaterial, uniforms);
+  // Crowns are big: dissolve them sooner near the camera and in a wider cone toward it, so a
+  // tree beside the lens never walls off the view.
+  addFade(canopyMaterial, uniforms, { near: 2.8, cone: 3.5 });
 
   const trunkMaterial = new THREE.MeshLambertMaterial({ vertexColors: true });
   trunkMaterial.onBeforeCompile = (shader) => {

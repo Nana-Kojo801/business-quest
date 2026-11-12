@@ -5,8 +5,9 @@ import * as THREE from 'three';
  * rocks, buildings and props:
  *  - anything between the camera and the player fades out completely, so the
  *    player is never hidden;
- *  - anything right in front of the lens fades out, so a post or trunk never
- *    fills the screen as a big smear.
+ *  - anything right in front of the lens (within `near` metres) fades out, so a
+ *    post or trunk never fills the screen; tree crowns use a wider distance, so
+ *    a pine beside the camera never walls off the view.
  *
  * Uses ordered-dither discard (screen-door transparency): no sorting, almost
  * free. The fade reaches 100%, so a fully dissolved object leaves no dot
@@ -36,10 +37,12 @@ export const FADE = /* glsl */ `
   float off = length(rel - segDir * along);
   // Only in front of the player, close to the camera-player line.
   float block = step(0.0, along) * (1.0 - smoothstep(segLen - 1.5, segLen - 0.5, along));
-  fade = block * (1.0 - smoothstep(1.55, 1.85, off));
+  // The clear zone is a cone: 1.85 m around the line at the player, wider toward the camera.
+  float radius = 1.85 + BQ_CONE * (1.0 - clamp(along / segLen, 0.0, 1.0));
+  fade = block * (1.0 - smoothstep(radius - 0.3, radius, off));
 #endif
   // Right in front of the lens.
-  fade = max(fade, 1.0 - smoothstep(0.9, 1.25, length(rel)));
+  fade = max(fade, 1.0 - smoothstep(BQ_NEAR_FADE - 0.35, BQ_NEAR_FADE, length(rel)));
   if (fade > bqBayer4(gl_FragCoord.xy) - 0.001) discard;
 }
 `;
@@ -51,7 +54,7 @@ export const FADE = /* glsl */ `
 export function addFade(
   material: THREE.Material,
   uniforms: { uPlayerPos: THREE.IUniform<THREE.Vector3> },
-  { occlusion = true } = {},
+  { occlusion = true, near = 1.25, cone = 0 } = {},
 ) {
   const previous = material.onBeforeCompile.bind(material);
   const previousKey = material.customProgramCacheKey.bind(material);
@@ -59,8 +62,8 @@ export function addFade(
     previous(shader, renderer);
     shader.uniforms.uPlayerPos = uniforms.uPlayerPos;
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\n${occlusion ? '' : '#define BQ_NO_OCCLUSION_FADE'}\n${FADE_PARS}`)
+      .replace('#include <common>', `#include <common>\n${occlusion ? '' : '#define BQ_NO_OCCLUSION_FADE'}\n#define BQ_NEAR_FADE ${near.toFixed(2)}\n#define BQ_CONE ${cone.toFixed(2)}\n${FADE_PARS}`)
       .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>\n${FADE}`);
   };
-  material.customProgramCacheKey = () => previousKey() + (occlusion ? '|bq-fade' : '|bq-fade-near');
+  material.customProgramCacheKey = () => previousKey() + `|bq-fade-${occlusion ? 'o' : ''}${near}-${cone}`;
 }

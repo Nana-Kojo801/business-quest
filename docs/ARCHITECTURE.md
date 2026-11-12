@@ -90,7 +90,8 @@ shore foam, and the shared atmospheric fog.
 `src/render/fade.ts` (`addFade(material, uniforms, { occlusion })`) is the shared dissolve for
 world objects: anything between the camera and the player fades out completely (no leftover dot
 pattern), and anything right in front of the lens fades so a post or trunk never fills the screen.
-Low objects (rocks) use only the near-lens fade. Trees, rocks, buildings and their glowing parts use it.
+Tree crowns use a wider near distance and a clear zone that widens into a cone toward the camera,
+so a tree beside the lens never walls off the view. Low objects (rocks) use only the near-lens fade. Trees, rocks, buildings and their glowing parts use it.
 
 ## Vegetation and rocks
 
