@@ -1,5 +1,6 @@
 import type { Command } from './commands';
-import { TERRAIN, boundaryNormal, isWalkable } from './terrain';
+import { boundaryNormal, isWalkable } from './collision';
+import { TERRAIN } from './terrain';
 import type { PlayerState, WorldState } from './types';
 
 export const TICK_RATE = 60;

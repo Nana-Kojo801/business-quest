@@ -17,8 +17,10 @@ export function createDebugOverlay(read: () => QualityState & { pixelRatio: numb
     zIndex: '10',
   } satisfies Partial<CSSStyleDeclaration>);
   document.body.appendChild(el);
-  setInterval(() => {
+  const refresh = () => {
     const q = read();
     el.textContent = `${q.fps} fps · ${q.tier} · res ${Math.round(q.scale * 100)}% · dpr ${q.pixelRatio.toFixed(2)}`;
-  }, 500);
+  };
+  refresh(); // show something immediately, before the first frame-time sample
+  setInterval(refresh, 500);
 }

@@ -110,13 +110,19 @@ test.describe('quality tiers', () => {
   }
 });
 
-test('picks a starting tier by device and shows the debug overlay', async ({ page }, info) => {
-  test.setTimeout(60_000);
-  await load(page, '?debug=1&adaptive=0', 3);
-  const d = await readDebug(page);
-  expect(d.quality.tier).toBe(info.project.name === 'phone-portrait' ? 'medium' : 'high');
-  await expect(page.getByTestId('debug-overlay')).toContainText('fps');
+test.describe('starting tier', () => {
+  // Only the device type matters here; a small viewport keeps the CPU renderer responsive.
+  test.use({ viewport: { width: 270, height: 480 } });
+
+  test('picks a starting tier by device and shows the debug overlay', async ({ page }, info) => {
+    test.setTimeout(60_000);
+    await load(page, '?debug=1&adaptive=0', 3);
+    const d = await readDebug(page);
+    expect(d.quality.tier).toBe(info.project.name === 'phone-portrait' ? 'medium' : 'high');
+    await expect(page.getByTestId('debug-overlay')).toContainText('fps');
+  });
 });
+
 
 test.describe('sky', () => {
   test.use({ viewport: { width: 270, height: 480 }, deviceScaleFactor: 1 });

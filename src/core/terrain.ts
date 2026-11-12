@@ -145,24 +145,3 @@ export function heightAt(x: number, z: number): number {
   }
   return h;
 }
-
-/** Whether a player may stand here (inside the valley, not in the lake). */
-export function isWalkable(x: number, z: number): boolean {
-  if (Math.hypot(x, z) > TERRAIN.playRadius) return false;
-  return heightAt(x, z) > TERRAIN.waterLevel - 0.15;
-}
-
-/**
- * Direction pointing away from blocked ground at a point near a boundary, as a unit
- * vector. Smoothed over about a metre so small bumps in the shoreline don't count.
- */
-export function boundaryNormal(x: number, z: number): Vec2Like {
-  const r = Math.hypot(x, z);
-  if (r > TERRAIN.playRadius - 1) return { x: -x / r, z: -z / r }; // valley edge: point inward
-  const e = 0.9;
-  // Uphill from the water is away from the lake.
-  const gx = heightAt(x + e, z) - heightAt(x - e, z);
-  const gz = heightAt(x, z + e) - heightAt(x, z - e);
-  const len = Math.hypot(gx, gz);
-  return len > 1e-9 ? { x: gx / len, z: gz / len } : { x: 0, z: 0 };
-}

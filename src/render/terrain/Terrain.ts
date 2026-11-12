@@ -1,20 +1,8 @@
 import * as THREE from 'three';
 import { TERRAIN, heightAt, pathMask } from '../../core';
 import { NOISE_GLSL, getNoiseTexture } from '../noiseTexture';
+import { GRASS_COLOR_GLSL, PALETTE_UNIFORMS_GLSL, paletteUniforms } from './palette';
 
-/** Terrain palette (sRGB). Tuned for golden-hour light. */
-const PALETTE = {
-  grassCool: '#4f9156',
-  grassWarm: '#9cc25a',
-  grassDeep: '#3d7a50',
-  meadowGold: '#c8c463',
-  dirt: '#cfae82',
-  dirtDark: '#a88664',
-  sand: '#e2cc98',
-  lakeBed: '#5e7f6a',
-  rock: '#968c86',
-  rockWarm: '#bca48e',
-};
 
 const SIZE = 300; // world units across
 const SEGMENTS = 220;
@@ -59,24 +47,15 @@ const TERRAIN_PARS_FRAGMENT = /* glsl */ `
 varying float vPath;
 varying vec3 vTWorld;
 varying vec3 vTNormal;
-uniform vec3 tGrassCool, tGrassWarm, tGrassDeep, tMeadowGold, tDirt, tDirtDark, tSand, tLakeBed, tRock, tRockWarm;
+${PALETTE_UNIFORMS_GLSL}
 uniform float tWaterLevel;
 ${NOISE_GLSL}
+${GRASS_COLOR_GLSL}
 
 vec3 terrainColor() {
   vec2 p = vTWorld.xz;
-  float n1 = bqNoiseA(p * 0.06);            // broad colour patches
-  float n2 = bqNoiseB(p * 0.31 + 17.0);     // medium breakup
-  float n3 = bqNoiseC(p * 0.85 + 41.0);     // fine dabs, visible up close
-  // Brush strokes: noise stretched along one diagonal, like loaded-brush dabs.
-  vec2 bp = vec2(dot(p, vec2(0.8, 0.6)) * 0.9, dot(p, vec2(-0.6, 0.8)) * 0.22);
-  float stroke = bqNoiseD(bp) * 0.65 + bqNoiseA(bp * 2.3 + 5.0) * 0.35;
-
-  // Grass: warm and cool greens in soft patches, deep green in hollows, gold meadow highlights.
-  vec3 c = mix(tGrassCool, tGrassWarm, smoothstep(0.25, 0.75, n1 * 0.7 + n3 * 0.3));
-  c = mix(c, tGrassDeep, smoothstep(0.58, 0.9, n2) * 0.45);
-  c = mix(c, tMeadowGold, smoothstep(0.68, 0.9, n1 * 0.7 + stroke * 0.3) * 0.55);
-  c *= 0.84 + 0.32 * stroke;
+  float n1, n2, stroke;
+  vec3 c = bqGrassColor(p, n1, n2, stroke);
 
   // Sandy shore and lake bed near the water line.
   float wl = vTWorld.y - tWaterLevel + (n2 - 0.5) * 0.35;
@@ -104,9 +83,7 @@ export function createTerrain(): THREE.Mesh {
     tWaterLevel: { value: TERRAIN.waterLevel },
     bqNoise: { value: getNoiseTexture() },
   };
-  for (const [k, v] of Object.entries(PALETTE)) {
-    uniforms['t' + k[0].toUpperCase() + k.slice(1)] = { value: new THREE.Color(v) };
-  }
+  Object.assign(uniforms, paletteUniforms());
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader

@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { heightAt, type PlayerId, type WorldState } from '../core';
 import { createTerrain } from './terrain/Terrain';
 import { createWater } from './water/Water';
+import { createField } from './flora/Field';
+import { bakeGroundData, type GroundData } from './terrain/groundData';
 import { Pipeline } from './pipeline';
 import { QualityManager, initialTier } from './quality';
 import { Atmosphere } from './sky/Atmosphere';
@@ -27,6 +29,8 @@ export class WorldView {
   private focus = new THREE.Vector3();
   private cameraGround = 0;
   private water: ReturnType<typeof createWater>;
+  private ground: GroundData;
+  private fields: ReturnType<typeof createField>[] = [];
 
   constructor(private container: HTMLElement) {
     // Antialiasing, tone mapping and colour output are handled by the post-processing pipeline.
@@ -55,13 +59,16 @@ export class WorldView {
       if (tierChanged) {
         this.pipeline.applyTier(this.quality.settings);
         this.atmosphere.setShadowMapSize(this.quality.settings.shadowMapSize);
+        this.buildFields();
       }
       this.resize();
     };
 
+    this.ground = bakeGroundData();
     this.water = createWater(this.atmosphere);
     this.scene.add(this.water.mesh);
     this.buildPlaceholderWorld();
+    this.buildFields();
     window.addEventListener('resize', () => this.resize());
     this.resize();
   }
@@ -88,6 +95,20 @@ export class WorldView {
     this.atmosphere.adopt(world);
     // Rolling ground casting onto itself at a low sun causes speckled artefacts; it only receives.
     terrain.castShadow = false;
+  }
+
+  /** (Re)build grass and flowers for the current quality tier. */
+  private buildFields() {
+    for (const f of this.fields) {
+      this.scene.remove(f.mesh);
+      f.dispose();
+    }
+    const tier = this.quality.settings;
+    this.fields = [
+      createField('grass', tier.grass, this.atmosphere, this.ground),
+      createField('flowers', tier.flowers, this.atmosphere, this.ground),
+    ];
+    for (const f of this.fields) this.scene.add(f.mesh);
   }
 
   resize() {
@@ -152,6 +173,7 @@ export class WorldView {
     const time = performance.now() / 1000;
     this.atmosphere.update(time, this.camera, this.focus);
     this.water.update(time);
+    for (const f of this.fields) f.update(this.focus, time);
     this.pipeline.render(dt);
   }
 }

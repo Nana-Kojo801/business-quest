@@ -1,0 +1,8 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`flora layout > places a stable number of trees and boulders (guards cross-machine agreement) 1`] = `
+{
+  "boulders": 35,
+  "trees": 307,
+}
+`;
