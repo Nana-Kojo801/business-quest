@@ -2,7 +2,7 @@
 
 exports[`terrain > known heights do not drift (guards cross-machine agreement) 1`] = `1.7199321200494937`;
 
-exports[`terrain > known heights do not drift (guards cross-machine agreement) 2`] = `4.206194235728274`;
+exports[`terrain > known heights do not drift (guards cross-machine agreement) 2`] = `4.513498454298556`;
 
 exports[`terrain > known heights do not drift (guards cross-machine agreement) 3`] = `-2.2`;
 

@@ -14,7 +14,7 @@ export interface Vec2Like {
 export const TERRAIN = {
   spawn: { x: 0, z: 0 },
   lake: { x: -15, z: -20, radius: 11 },
-  plateau: { x: 13, z: -24, radius: 10, height: 2.8 },
+  plateau: { x: 6, z: -27, radius: 10, height: 2.8 },
   /** Walkable radius from the valley centre. */
   playRadius: 40,
   /** Mountains begin rising here. */
@@ -26,9 +26,9 @@ export const TERRAIN = {
     [
       [0, 3],
       [2, -5],
-      [6, -11],
-      [10, -17],
-      [13, -22],
+      [4.5, -12],
+      [5.5, -18],
+      [6.2, -24.6],
     ],
     [
       [2, -5],

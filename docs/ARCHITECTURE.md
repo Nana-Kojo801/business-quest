@@ -96,3 +96,11 @@ shore foam, and the shared atmospheric fog.
 - `src/render/flora/Rocks.ts`: instanced faceted boulders with moss, and small shore/path stones.
 
 Counts scale with the quality tier (`grass`, `flowers`, `farTrees`, `pebbles`).
+
+## Buildings and props
+
+`src/core/structures.ts` lays out the landmark tower (on the plateau, door facing the end of the
+path), the market stall at the fork, the signpost and lanterns along the main path; all block
+movement. `src/render/structures/Buildings.ts` builds each one from simple shapes, merged into
+one painted mesh plus one glowing mesh per structure; glowing parts use colours above 1.0 so
+the bloom picks them up. Buildings dissolve when they come between the camera and the player.

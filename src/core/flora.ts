@@ -3,6 +3,7 @@
  * machine places them identically; they block movement, so the simulation
  * needs them, and the renderer draws them at the same spots.
  */
+import { structureAt } from './structures';
 import { TERRAIN, distToPath, fbm2, heightAt, noise2, smoothstep } from './terrain';
 
 export type ObstacleKind = 'tree' | 'boulder';
@@ -44,6 +45,7 @@ function isClearZone(x: number, z: number, margin: number) {
   if (heightAt(x, z) < TERRAIN.waterLevel + 0.9) return true;
   const p = TERRAIN.plateau;
   if (Math.hypot(x - p.x, z - p.z) < p.radius * 0.75) return true;
+  if (structureAt(x, z, 2.2 + margin)) return true; // room around buildings and props
   return false;
 }
 

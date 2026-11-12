@@ -19,8 +19,8 @@ describe('terrain', () => {
   it('known heights do not drift (guards cross-machine agreement)', () => {
     // If the height function changes on purpose, update these snapshots.
     expect(heightAt(0, 0)).toMatchSnapshot();
-    expect(heightAt(13, -24)).toMatchSnapshot();
-    expect(heightAt(-15, -20)).toMatchSnapshot();
+    expect(heightAt(TERRAIN.plateau.x, TERRAIN.plateau.z)).toMatchSnapshot();
+    expect(heightAt(TERRAIN.lake.x, TERRAIN.lake.z)).toMatchSnapshot();
     expect(heightAt(70, 10)).toMatchSnapshot();
   });
 
@@ -41,7 +41,8 @@ describe('terrain', () => {
   it('the plateau stands above the meadow', () => {
     const { x, z } = TERRAIN.plateau;
     expect(heightAt(x, z)).toBeGreaterThan(heightAt(0, 0) + 2);
-    expect(isWalkable(x, z)).toBe(true);
+    // The landmark stands at its centre; the plateau in front of it is walkable.
+    expect(isWalkable(x, z + 3)).toBe(true);
   });
 
   it('mountains rise outside the walkable valley', () => {
@@ -56,7 +57,7 @@ describe('terrain', () => {
   it('paths start at spawn and lead to the plateau', () => {
     expect(distToPath(0, 0)).toBeLessThan(1);
     expect(pathMask(2, -5)).toBeGreaterThan(0.5); // a point on the path's centre line
-    expect(distToPath(TERRAIN.plateau.x, TERRAIN.plateau.z)).toBeLessThan(2.5);
+    expect(distToPath(TERRAIN.plateau.x, TERRAIN.plateau.z)).toBeLessThan(3);
     expect(pathMask(30, 10)).toBe(0);
   });
 });

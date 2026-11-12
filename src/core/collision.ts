@@ -1,5 +1,6 @@
 /** Where players may stand, and which way to slide when they can't. */
 import { obstacleAt } from './flora';
+import { structureAt } from './structures';
 import { TERRAIN, heightAt, type Vec2Like } from './terrain';
 
 /** Player body radius used against trees and boulders. */
@@ -9,7 +10,7 @@ export const PLAYER_RADIUS = 0.35;
 export function isWalkable(x: number, z: number): boolean {
   if (Math.hypot(x, z) > TERRAIN.playRadius) return false;
   if (heightAt(x, z) <= TERRAIN.waterLevel - 0.15) return false;
-  return obstacleAt(x, z, PLAYER_RADIUS) === undefined;
+  return obstacleAt(x, z, PLAYER_RADIUS) === undefined && structureAt(x, z, PLAYER_RADIUS) === undefined;
 }
 
 /**
@@ -18,7 +19,7 @@ export function isWalkable(x: number, z: number): boolean {
  * the shoreline don't count.
  */
 export function boundaryNormal(x: number, z: number): Vec2Like {
-  const near = obstacleAt(x, z, PLAYER_RADIUS + 0.3);
+  const near = obstacleAt(x, z, PLAYER_RADIUS + 0.3) ?? structureAt(x, z, PLAYER_RADIUS + 0.3);
   if (near) {
     const dx = x - near.x;
     const dz = z - near.z;

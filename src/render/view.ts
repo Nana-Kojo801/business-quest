@@ -5,6 +5,7 @@ import { createWater } from './water/Water';
 import { createField } from './flora/Field';
 import { createRocks } from './flora/Rocks';
 import { createTrees } from './flora/Trees';
+import { createBuildings } from './structures/Buildings';
 import { bakeGroundData, type GroundData } from './terrain/groundData';
 import { Pipeline } from './pipeline';
 import { QualityManager, initialTier } from './quality';
@@ -31,6 +32,7 @@ export class WorldView {
   private focus = new THREE.Vector3();
   private cameraGround = 0;
   private water: ReturnType<typeof createWater>;
+  private buildings: ReturnType<typeof createBuildings>;
   private ground: GroundData;
   private fields: ReturnType<typeof createField>[] = [];
   private trees: ReturnType<typeof createTrees> | null = null;
@@ -71,6 +73,8 @@ export class WorldView {
     this.ground = bakeGroundData();
     this.water = createWater(this.atmosphere);
     this.scene.add(this.water.mesh);
+    this.buildings = createBuildings(this.atmosphere);
+    this.scene.add(this.buildings.group);
     this.buildPlaceholderWorld();
     this.buildFields();
     window.addEventListener('resize', () => this.resize());
@@ -87,7 +91,7 @@ export class WorldView {
     // Placeholder glowing crystals (stand-ins until real props arrive).
     const crystalMat = new THREE.MeshStandardMaterial({ color: '#9fe8ff', emissive: '#5cd6ff', emissiveIntensity: 4 });
     const crystalGeo = new THREE.OctahedronGeometry(0.35);
-    const spots: [number, number][] = [[-4, -6], [7, -4], [-10, -4], [4, -14], [-6, -24], [18, -12], [9, -28], [-20, -8]];
+    const spots: [number, number][] = [[-4, -6], [9, -1], [-10, -4], [4, -14], [-6, -24], [18, -12], [9, -28], [-20, -8]];
     for (const [x, z] of spots) {
       const m = new THREE.Mesh(crystalGeo, crystalMat);
       m.position.set(x, heightAt(x, z) + 0.9, z);
@@ -190,6 +194,7 @@ export class WorldView {
     this.water.update(time);
     for (const f of this.fields) f.update(this.focus, time);
     this.trees?.update(time, this.camera, this.focus);
+    this.buildings.update(time, this.focus);
     this.pipeline.render(dt);
   }
 }
