@@ -30,6 +30,8 @@ export class AudioEngine {
   private sfxBus!: GainNode;
   private ambBus!: GainNode;
   private reverb!: ConvolverNode;
+  /** One shared echo for all plucked notes (a new feedback loop per note would pile up forever). */
+  private echo!: DelayNode;
   private noise!: AudioBuffer;
   private waterGain!: GainNode;
   private windFilter!: BiquadFilterNode;
@@ -42,7 +44,7 @@ export class AudioEngine {
 
   /** Output loudness right now: RMS and peak of the last ~40 ms (for checks and debugging). */
   level() {
-    if (!this.analyser) return { rms: 0, peak: 0 };
+    if (!this.analyser) return { rms: 0, peak: 0, hiss: 0 };
     const d = new Float32Array(this.analyser.fftSize);
     this.analyser.getFloatTimeDomainData(d);
     let sum = 0;
@@ -51,7 +53,18 @@ export class AudioEngine {
       sum += v * v;
       peak = Math.max(peak, Math.abs(v));
     }
-    return { rms: Math.sqrt(sum / d.length), peak };
+    // Share of energy above 2.5 kHz: a rough measure of hiss.
+    const bins = new Float32Array(this.analyser.frequencyBinCount);
+    this.analyser.getFloatFrequencyData(bins);
+    const hz = this.ctx!.sampleRate / 2 / bins.length;
+    let hi = 0;
+    let all = 0;
+    bins.forEach((db, i) => {
+      const e = Math.pow(10, db / 10);
+      all += e;
+      if (i * hz > 2500) hi += e;
+    });
+    return { rms: Math.sqrt(sum / d.length), peak, hiss: all > 0 ? hi / all : 0 };
   }
 
   /** 'locked' until a user gesture, then the audio context's state. */
@@ -88,12 +101,21 @@ export class AudioEngine {
     this.sfxBus = ctx.createGain();
     this.ambBus = ctx.createGain();
     this.reverb = ctx.createConvolver();
-    this.reverb.buffer = this.impulse(2.8);
+    this.reverb.buffer = this.impulse(1.8);
     const wet = ctx.createGain();
     wet.gain.value = 0.35;
     this.reverb.connect(wet).connect(this.master);
     for (const bus of [this.musicBus, this.sfxBus, this.ambBus]) bus.connect(this.master);
     this.musicBus.connect(this.reverb);
+    this.echo = ctx.createDelay(1);
+    this.echo.delayTime.value = 0.42;
+    const fb = ctx.createGain();
+    fb.gain.value = 0.3;
+    const echoTone = ctx.createBiquadFilter();
+    echoTone.type = 'lowpass';
+    echoTone.frequency.value = 2500; // each repeat a little softer and darker
+    this.echo.connect(echoTone).connect(fb).connect(this.echo);
+    fb.connect(this.musicBus);
     this.ambBus.connect(this.reverb);
     this.noise = this.noiseBuffer(4);
     this.setVolumes(this.volumes);
@@ -177,32 +199,59 @@ export class AudioEngine {
 
   private startWind() {
     const ctx = this.ctx!;
+    // Two gentle lowpass stages keep it a soft rush, never a hiss.
     this.windFilter = ctx.createBiquadFilter();
     this.windFilter.type = 'lowpass';
-    this.windFilter.frequency.value = 500;
-    this.windFilter.Q.value = 0.7;
+    this.windFilter.frequency.value = 280;
+    this.windFilter.Q.value = 0.4;
+    const soften = ctx.createBiquadFilter();
+    soften.type = 'lowpass';
+    soften.frequency.value = 600;
+    soften.Q.value = 0.3;
     const g = ctx.createGain();
-    g.gain.value = 0.16;
-    this.loopNoise().connect(this.windFilter).connect(g).connect(this.ambBus);
-    // Gusts: the filter opens and the level swells slowly, at two unrelated rates.
-    this.lfo(0.07, 260, this.windFilter.frequency);
-    this.lfo(0.031, 140, this.windFilter.frequency);
-    this.lfo(0.05, 0.06, g.gain);
+    g.gain.value = 0.1;
+    this.loopNoise().connect(this.windFilter).connect(soften).connect(g).connect(this.ambBus);
+    // Gusts: the filter opens a little and the level swells slowly, at two unrelated rates.
+    this.lfo(0.07, 110, this.windFilter.frequency);
+    this.lfo(0.031, 60, this.windFilter.frequency);
+    this.lfo(0.05, 0.045, g.gain);
   }
 
   private startWater() {
     const ctx = this.ctx!;
     const f = ctx.createBiquadFilter();
-    f.type = 'bandpass';
-    f.frequency.value = 700;
-    f.Q.value = 0.8;
+    f.type = 'lowpass';
+    f.frequency.value = 420;
+    f.Q.value = 0.5;
     const lap = ctx.createGain();
     lap.gain.value = 0.5;
-    this.lfo(0.42, 0.45, lap.gain); // gentle lapping rhythm
-    this.lfo(0.17, 250, f.frequency);
+    this.lfo(0.42, 0.4, lap.gain); // gentle lapping rhythm
+    this.lfo(0.17, 90, f.frequency);
     this.waterGain = ctx.createGain();
     this.waterGain.gain.value = 0.02;
     this.loopNoise().connect(f).connect(lap).connect(this.waterGain).connect(this.ambBus);
+    this.scheduleDrops();
+  }
+
+  /** Little water plips, only audible near the lake (they go through the water level). */
+  private scheduleDrops() {
+    this.later(() => {
+      const ctx = this.ctx!;
+      const t = ctx.currentTime;
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      const f0 = 700 + Math.random() * 600;
+      o.frequency.setValueAtTime(f0, t);
+      o.frequency.exponentialRampToValueAtTime(f0 * 1.8, t + 0.06);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.5, t + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+      o.connect(g).connect(this.waterGain);
+      o.start(t);
+      o.stop(t + 0.12);
+      this.scheduleDrops();
+    }, 0.4 + Math.random() * 1.6);
   }
 
   private scheduleBirds() {
@@ -308,14 +357,8 @@ export class AudioEngine {
     g2.gain.value = 0.25;
     o.connect(g);
     o2.connect(g2).connect(g);
-    // Echo.
-    const delay = ctx.createDelay(1);
-    delay.delayTime.value = 0.42;
-    const fb = ctx.createGain();
-    fb.gain.value = 0.32;
     g.connect(this.musicBus);
-    g.connect(delay).connect(fb).connect(delay);
-    fb.connect(this.musicBus);
+    g.connect(this.echo);
     o.start(when);
     o2.start(when);
     o.stop(when + 2.4);
@@ -350,7 +393,7 @@ export class AudioEngine {
     src.buffer = this.noise;
     const f = ctx.createBiquadFilter();
     f.type = onPath ? 'bandpass' : 'lowpass';
-    f.frequency.value = (onPath ? 1300 : 650) * (0.85 + Math.random() * 0.3);
+    f.frequency.value = (onPath ? 1000 : 420) * (0.85 + Math.random() * 0.3);
     f.Q.value = onPath ? 1.2 : 0.7;
     const g = ctx.createGain();
     const level = (onPath ? 0.32 : 0.22) * strength;
