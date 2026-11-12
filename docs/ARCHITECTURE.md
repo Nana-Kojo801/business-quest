@@ -171,3 +171,16 @@ Marcellus for titles, Nunito for text; SVG icons in `icons.ts`).
   those who missed out stomp off) and its camera shot. `src/ui/pricing.ts`: price panel, results,
   and the Ledger Lens tags above heads.
 - Debug: `?quest=meet|return|market|debrief|done` jumps to a stage.
+
+## Sound, loading and performance
+
+- `src/audio/AudioEngine.ts`: all sound generated with the Web Audio API (no files): wind,
+  birdsong, lapping water by distance to the lake, generative pentatonic music, footsteps (grass
+  vs path), UI taps, dialogue blips per speaker, chimes, coins. Starts on the first user gesture,
+  suspends when the tab is hidden; Music and Sound volumes in Settings.
+- `index.html` contains the loading screen, so it shows before any script loads; `main.ts` fades
+  it after `renderer.compileAsync` has prepared every shader and the first frames have drawn.
+- Characters are skinned meshes (one skeleton, body/cloth/outline meshes: ~5 draw calls each).
+  Valley trees are instanced per 32 m cell so culling works for the camera and the shadow map;
+  far trees use low-detail crowns. Medium tier: ~130 draw calls, ~445k triangles (was 226 / 709k).
+- Debug: `window.triBreakdown()` lists triangles per scene object; `__bq.renderInfo` gives calls.

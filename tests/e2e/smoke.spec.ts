@@ -386,3 +386,21 @@ test.describe('the first quest', () => {
     await expect(page.getByTestId('codex')).toContainText('Shortage');
   });
 });
+
+test('loading screen fades away, and sound starts on the first tap', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', 'one run is enough');
+  test.setTimeout(90_000);
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto('/?quality=low&adaptive=0');
+  await expect(page.getByTestId('loading')).toBeAttached();
+  await expect(page.getByTestId('loading')).not.toBeAttached({ timeout: 60_000 });
+  expect(((await readDebug(page)) as Debug & { audio: string }).audio).toBe('locked');
+  await page.mouse.click(400, 300);
+  await expect.poll(async () => ((await readDebug(page)) as Debug & { audio: string }).audio, { timeout: 10_000 }).toBe('running');
+  // Walk a bit with sound running (footsteps, ambience): no errors.
+  await page.keyboard.down('KeyW');
+  await page.waitForTimeout(1500);
+  await page.keyboard.up('KeyW');
+  expect(errors).toEqual([]);
+});

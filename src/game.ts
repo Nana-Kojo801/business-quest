@@ -1,4 +1,5 @@
-import { NPCS, Simulation, TICK_DT, heightAt, interactTarget, type PlayerId, type WorldState } from './core';
+import { NPCS, Simulation, TERRAIN, TICK_DT, heightAt, interactTarget, pathMask, type PlayerId, type WorldState } from './core';
+import { AudioEngine } from './audio/AudioEngine';
 import { Input } from './input/devices';
 import { LocalController } from './input/controller';
 import { LocalTransport, type CommandTransport } from './net/transport';
@@ -44,6 +45,9 @@ export class Game {
   private lastTime = 0;
   private lastInteractionTick = -1;
   readonly quests = new FirstQuests();
+  readonly audio = new AudioEngine();
+  private stepDist = 0;
+  private lastStepPos: { x: number; z: number } | null = null;
   private pricing = new PricingPanel();
   private market: MarketScene | null = null;
   /** True while the market crowd is acting out a morning (for tests). */
@@ -53,7 +57,10 @@ export class Game {
   constructor(container: HTMLElement) {
     this.view = new WorldView(container);
     this.transport = new LocalTransport(this.sim);
-    this.controls = createControls(() => this.input.pressInteract());
+    this.controls = createControls(() => {
+      this.audio.tap();
+      this.input.pressInteract();
+    });
     this.input = new Input(this.controls.surface);
     this.controller = new LocalController(this.input, this.transport, this.localPlayer);
 
@@ -61,6 +68,13 @@ export class Game {
     this.settings = loadSettings();
     this.fps = createDebugOverlay(() => ({ ...this.view.quality.state, pixelRatio: this.view.renderer.getPixelRatio() }));
     this.hud = new Hud(() => this.openMenu(), () => this.openMenu('journal'));
+    // Sound may only start after a user gesture.
+    const unlock = () => this.audio.unlock();
+    window.addEventListener('pointerdown', unlock, { capture: true });
+    window.addEventListener('keydown', unlock, { capture: true });
+    const pitch: Record<string, number> = { Mira: 1.18, 'Keeper Aldous': 0.82 };
+    this.dialogue.onType = (speaker) => this.audio.blip(pitch[speaker] ?? 1);
+    this.dialogue.onAdvance = () => this.audio.tap();
     this.menu = new Menu(this.settings, (s) => this.applySettings(s), () => (this.mode = 'explore'));
     // A ?quality= URL override wins over the saved setting.
     this.applySettings(this.settings, params.has('quality'));
@@ -84,11 +98,25 @@ export class Game {
     const stage = params.get('quest') as Stage | null;
     if (stage && ['meet', 'return', 'market', 'debrief', 'done'].includes(stage)) this.quests.skipTo(stage);
     this.updateObjective();
-    setTimeout(() => this.hud.banner('The Valley of', 'Sunmeadow'), 600);
+
   }
 
   start() {
     this.view.renderer.setAnimationLoop((t) => this.frame(t));
+  }
+
+  /** Prepare every shader up front so the first seconds don't stutter. */
+  async warmUp() {
+    try {
+      await this.view.renderer.compileAsync(this.view.scene, this.view.camera);
+    } catch {
+      // Older browsers: shaders compile on first use instead.
+    }
+  }
+
+  /** The arrival moment, once the loading screen has gone. */
+  arrive() {
+    setTimeout(() => this.hud.banner('The Valley of', 'Sunmeadow'), 400);
   }
 
   /** What the local player can interact with right now, if anything. */
@@ -104,6 +132,7 @@ export class Game {
   private openMenu(tab?: 'journal' | 'codex' | 'settings') {
     if (this.mode !== 'explore') return;
     this.mode = 'menu';
+    this.audio.open();
     this.menu.open(tab);
   }
 
@@ -112,6 +141,7 @@ export class Game {
     saveSettings(s);
     if (!keepQuality) this.view.setQuality(s.quality === 'auto' ? null : s.quality);
     this.view.rig.sensitivity = s.sensitivity;
+    this.audio.setVolumes({ music: s.music, sfx: s.sfx });
     this.fps.setVisible(s.showFps);
   }
 
@@ -140,7 +170,10 @@ export class Game {
       }
       const banner = this.quests.talked(npcId, after);
       this.updateObjective();
-      if (banner) this.hud.banner(banner.sub, banner.title);
+      if (banner) {
+        this.hud.banner(banner.sub, banner.title);
+        this.audio.chime();
+      }
       if (after === 'startMarket') this.startMarket();
       then?.();
     });
@@ -150,7 +183,11 @@ export class Game {
   private startMarket() {
     this.mode = 'scene';
     const scene = new MarketScene(this.view.atmosphere, this.quests.limits, this.quests.seeds, {
-      bubble: (i, text) => this.bubbles.show(`shopper-${i}`, text, () => scene.head(i), 1.4),
+      bubble: (i, text) => {
+        this.bubbles.show(`shopper-${i}`, text, () => scene.head(i), 1.4);
+        if (text === '♥') this.audio.coin();
+        else this.audio.grumble();
+      },
     });
     this.market = scene;
     this.view.scene.add(scene.group);
@@ -176,6 +213,7 @@ export class Game {
         this.marketPlaying = true;
         scene.play(res, () => {
           this.marketPlaying = false;
+          this.audio.result(res.cleared);
           this.pricing.open(this.quests.round, () => {}, () => {});
           if (res.cleared) {
             this.pricing.showResult(res, this.quests.reaction(res), { label: 'Continue', action: () => this.marketCleared() });
@@ -211,6 +249,25 @@ export class Game {
     this.view.faceTarget = null;
     this.view.endConversation();
     this.updateObjective();
+  }
+
+  /** Footsteps from distance walked; lapping water louder near the lake. */
+  private updateSound() {
+    const me = this.sim.state.players[this.localPlayer];
+    if (!me || !this.audio.unlocked) return;
+    const p = me.position;
+    if (this.lastStepPos) {
+      this.stepDist += Math.hypot(p.x - this.lastStepPos.x, p.z - this.lastStepPos.z);
+      const w = Math.min(1, me.speed / 4.5);
+      const stride = 0.9 + 0.8 * w; // matches the walk cycle
+      if (me.speed > 0.4 && this.stepDist >= stride / 2) {
+        this.stepDist = 0;
+        this.audio.step(pathMask(p.x, p.z) > 0.5, 0.6 + 0.4 * w);
+      }
+    }
+    this.lastStepPos = { x: p.x, z: p.z };
+    const d = Math.hypot(p.x - TERRAIN.lake.x, p.z - TERRAIN.lake.z) - TERRAIN.lake.radius;
+    this.audio.setNearWater(Math.max(0, Math.min(1, 1 - d / 14)));
   }
 
   private updateObjective() {
@@ -263,6 +320,7 @@ export class Game {
     this.view.setConversationCover(Math.max(this.dialogue.coverFraction, this.pricing.coverFraction));
     this.view.render(this.prev, this.sim.state, this.accumulator / TICK_DT, this.localPlayer, dt);
     this.dialogue.update(dt);
+    this.updateSound();
     if (this.market) {
       this.market.update(dt, performance.now() / 1000);
       this.pricing.updateTags(this.view.project, (i) => this.market!.head(i));

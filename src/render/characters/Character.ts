@@ -47,7 +47,7 @@ function colored(geo: THREE.BufferGeometry, color: string, shade?: ColorFn): THR
 }
 
 /** A smooth body part from a side profile (radius, y) rotated around the vertical axis. */
-function lathe(profile: [number, number][], segs = 18, zScale = 1, phiStart = 0, phiLen = Math.PI * 2) {
+function lathe(profile: [number, number][], segs = 14, zScale = 1, phiStart = 0, phiLen = Math.PI * 2) {
   // Lathe faces point outward only when the profile runs bottom to top.
   const pts = profile[0][1] > profile[profile.length - 1][1] ? [...profile].reverse() : profile;
   const g = new THREE.LatheGeometry(pts.map(([r, y]) => v2(r, y)), segs, phiStart, phiLen);
@@ -76,7 +76,7 @@ function folds(g: THREE.BufferGeometry, count: number, depth: number, top: numbe
  * A tapered, curving strand (hair lock, bang, cowlick). Radius goes from r0 at
  * the root to r1 at the tip; `flat` squashes it into a ribbon.
  */
-function strand(points: THREE.Vector3[], r0: number, r1: number, flat = 0.6, seg = 12, radial = 6) {
+function strand(points: THREE.Vector3[], r0: number, r1: number, flat = 0.6, seg = 8, radial = 5) {
   const curve = new THREE.CatmullRomCurve3(points);
   const tube = new THREE.TubeGeometry(curve, seg, 1, radial, false);
   const pos = tube.attributes.position as THREE.BufferAttribute;
@@ -190,21 +190,63 @@ function materials(atmosphere: Atmosphere): Materials {
   return shared;
 }
 
-function bone(pivot: THREE.Object3D, parts: Part[], m: Materials, mat: 'body' | 'cloth' = 'body') {
-  if (!parts.length) return;
-  const mesh = new THREE.Mesh(mergeGeometries(parts.map((p) => colored(p.geo, p.color, p.shade)))!, m[mat]);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  pivot.add(mesh);
-  const outlined = parts.filter((p) => p.outline !== false);
-  if (outlined.length) {
-    const og = mergeGeometries(outlined.map((p) => {
-      const g = p.geo.clone();
-      g.deleteAttribute('uv');
-      return g;
-    }))!;
-    pivot.add(new THREE.Mesh(og, m.outline));
+/**
+ * Parts are collected per bone while a character is built, then merged into a few
+ * skinned meshes (body, cloth, outline) sharing one skeleton: about 5 draw calls
+ * per character instead of one per part.
+ */
+type Collected = { pivot: THREE.Object3D; parts: Part[]; mat: 'body' | 'cloth' };
+let collecting: Collected[] | null = null;
+
+function bone(pivot: THREE.Object3D, parts: Part[], _m: Materials, mat: 'body' | 'cloth' = 'body') {
+  if (parts.length) collecting?.push({ pivot, parts, mat });
+}
+
+function skin(g: THREE.BufferGeometry, boneIndex: number) {
+  const n = g.attributes.position.count;
+  const idx = new Uint16Array(n * 4);
+  const wgt = new Float32Array(n * 4);
+  for (let i = 0; i < n; i++) {
+    idx[i * 4] = boneIndex;
+    wgt[i * 4] = 1;
   }
+  g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(idx, 4));
+  g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(wgt, 4));
+  return g;
+}
+
+function finalize(root: THREE.Object3D, items: Collected[], m: Materials) {
+  root.updateMatrixWorld(true);
+  const bones: THREE.Bone[] = [];
+  root.traverse((o) => {
+    if ((o as THREE.Bone).isBone) bones.push(o as THREE.Bone);
+  });
+  const lists: Record<'body' | 'cloth' | 'outline', THREE.BufferGeometry[]> = { body: [], cloth: [], outline: [] };
+  for (const it of items) {
+    const bi = bones.indexOf(it.pivot as THREE.Bone);
+    const mw = it.pivot.matrixWorld;
+    for (const p of it.parts) {
+      lists[it.mat].push(skin(colored(p.geo, p.color, p.shade).applyMatrix4(mw), bi));
+      if (p.outline !== false && it.mat === 'body') {
+        const o = p.geo.clone();
+        o.deleteAttribute('uv');
+        o.deleteAttribute('color');
+        lists.outline.push(skin(o.applyMatrix4(mw), bi));
+      }
+    }
+  }
+  const skeleton = new THREE.Skeleton(bones);
+  const make = (list: THREE.BufferGeometry[], material: THREE.Material, shadows: boolean) => {
+    if (!list.length) return;
+    const mesh = new THREE.SkinnedMesh(mergeGeometries(list)!, material);
+    mesh.castShadow = shadows;
+    mesh.receiveShadow = shadows;
+    root.add(mesh);
+    mesh.bind(skeleton);
+  };
+  make(lists.body, m.body, true);
+  make(lists.cloth, m.cloth, true);
+  make(lists.outline, m.outline, false);
 }
 
 /** A damped spring for secondary motion. */
@@ -227,11 +269,11 @@ class Spring {
 
 export class Character {
   readonly root = new THREE.Group();
-  private hips = new THREE.Object3D();
-  private torso = new THREE.Object3D();
-  private head = new THREE.Object3D();
-  private hairBack = new THREE.Object3D();
-  private cowlick = new THREE.Object3D();
+  private hips = new THREE.Bone();
+  private torso = new THREE.Bone();
+  private head = new THREE.Bone();
+  private hairBack = new THREE.Bone();
+  private cowlick = new THREE.Bone();
   private arms: { upper: THREE.Object3D; fore: THREE.Object3D }[] = [];
   private legs: { thigh: THREE.Object3D; shin: THREE.Object3D; foot: THREE.Object3D }[] = [];
   private capeUpper: THREE.Object3D | null = null;
@@ -272,6 +314,7 @@ export class Character {
   constructor(look: Look, atmosphere: Atmosphere, private seed = 0) {
     const m = materials(atmosphere);
     const w = look.build ?? 1;
+    collecting = [];
     this.root.name = 'character';
     this.root.add(this.hips);
     this.hips.position.y = Character.HIP_HEIGHT;
@@ -285,22 +328,22 @@ export class Character {
       { geo: tr(new THREE.BoxGeometry(0.05, 0.04, 0.02), 0, 0.045, 0.125), color: '#f3d488', outline: false },
     ];
     if (look.robe) {
-      hip.push({ geo: folds(lathe([[0.15 * w, 0.06], [0.17 * w, -0.08], [0.23, -0.4], [0.27, -0.66], [0.275, -0.68]], 26, 0.85), 9, 0.06, -0.05, -0.68), color: look.top, shade: shadeDown });
-      hip.push({ geo: folds(lathe([[0.27, -0.6], [0.278, -0.69]], 26, 0.85), 9, 0.06, 0.2, -0.68), color: look.trim, outline: false });
+      hip.push({ geo: folds(lathe([[0.15 * w, 0.06], [0.17 * w, -0.08], [0.23, -0.4], [0.27, -0.66], [0.275, -0.68]], 18, 0.85), 9, 0.06, -0.05, -0.68), color: look.top, shade: shadeDown });
+      hip.push({ geo: folds(lathe([[0.27, -0.6], [0.278, -0.69]], 18, 0.85), 9, 0.06, 0.2, -0.68), color: look.trim, outline: false });
     } else {
-      hip.push({ geo: folds(lathe([[0.152 * w, 0.06], [0.165 * w, -0.04], [0.2 * w, -0.17], [0.215 * w, -0.22]], 24, 0.82), 7, 0.07, 0.0, -0.22), color: look.top, shade: shadeDown });
+      hip.push({ geo: folds(lathe([[0.152 * w, 0.06], [0.165 * w, -0.04], [0.2 * w, -0.17], [0.215 * w, -0.22]], 17, 0.82), 7, 0.07, 0.0, -0.22), color: look.top, shade: shadeDown });
     }
     bone(this.hips, hip, m);
 
     // --- Legs, with a foot pivot so soles stay flat and toes push off. ---
     for (const side of [-1, 1]) {
-      const thigh = new THREE.Object3D();
+      const thigh = new THREE.Bone();
       thigh.position.set(side * 0.082, -0.05, 0);
       this.hips.add(thigh);
-      const shin = new THREE.Object3D();
+      const shin = new THREE.Bone();
       shin.position.y = -0.36;
       thigh.add(shin);
-      const foot = new THREE.Object3D();
+      const foot = new THREE.Bone();
       foot.position.y = -0.33;
       shin.add(foot);
       bone(thigh, [{ geo: lathe([[0.072, 0.04], [0.074, -0.06], [0.064, -0.24], [0.052, -0.37]], 12), color: look.legs }], m);
@@ -315,13 +358,13 @@ export class Character {
 
     // --- Torso: chest/waist profile, collar, open vest, sash. ---
     const torso: Part[] = [
-      { geo: lathe([[0.135 * w, 0.0], [0.14 * w, 0.08], [0.152 * w, 0.2], [0.158 * w, 0.29], [0.148 * w, 0.38], [0.118 * w, 0.45], [0.06, 0.5], [0.042, 0.52]], 22, 0.74), color: look.top, shade: shadeDown },
+      { geo: lathe([[0.135 * w, 0.0], [0.14 * w, 0.08], [0.152 * w, 0.2], [0.158 * w, 0.29], [0.148 * w, 0.38], [0.118 * w, 0.45], [0.06, 0.5], [0.042, 0.52]], 15, 0.74), color: look.top, shade: shadeDown },
       { geo: lathe([[0.038, 0.47], [0.036, 0.6]], 12), color: look.skin },
       { geo: tr(new THREE.TorusGeometry(0.062, 0.018, 6, 18).rotateX(Math.PI / 2), 0, 0.5, 0.0), color: look.top },
     ];
     if (!look.robe) {
       // Vest: open at the front.
-      torso.push({ geo: lathe([[0.143 * w, 0.03], [0.148 * w, 0.1], [0.16 * w, 0.21], [0.166 * w, 0.29], [0.156 * w, 0.37], [0.13 * w, 0.43]], 22, 0.78, 0.42, Math.PI * 2 - 0.84), color: look.accent });
+      torso.push({ geo: lathe([[0.143 * w, 0.03], [0.148 * w, 0.1], [0.16 * w, 0.21], [0.166 * w, 0.29], [0.156 * w, 0.37], [0.13 * w, 0.43]], 15, 0.78, 0.42, Math.PI * 2 - 0.84), color: look.accent });
       if (look.build && look.build > 1) {
         // Apron front panel for the merchant.
         torso.push({ geo: tr(new THREE.BoxGeometry(0.2, 0.3, 0.02), 0, 0.17, 0.112), color: look.accent });
@@ -329,7 +372,7 @@ export class Character {
     } else {
       // Robe: a trim band down the front and a capelet.
       torso.push({ geo: tr(new THREE.BoxGeometry(0.05, 0.48, 0.02), 0, 0.22, 0.115), color: look.trim, outline: false });
-      torso.push({ geo: folds(lathe([[0.07, 0.5], [0.17, 0.44], [0.21, 0.34], [0.215, 0.31]], 24, 0.8), 8, 0.05, 0.45, 0.31), color: look.accent });
+      torso.push({ geo: folds(lathe([[0.07, 0.5], [0.17, 0.44], [0.21, 0.34], [0.215, 0.31]], 17, 0.8), 8, 0.05, 0.45, 0.31), color: look.accent });
     }
     // Diagonal sash across the chest.
     torso.push({ geo: tr(new THREE.TorusGeometry(0.17 * w, 0.016, 5, 24).scale(1, 1, 0.8).rotateZ(0.5).rotateX(0.0), 0, 0.27, 0).rotateY(Math.PI / 2).scale(0.78, 1, 1).rotateY(-Math.PI / 2), color: look.trim, outline: false });
@@ -337,10 +380,10 @@ export class Character {
 
     // --- Arms: shoulder puff, tapered upper arm, cuffed forearm, mitten hand. ---
     for (const side of [-1, 1]) {
-      const upper = new THREE.Object3D();
+      const upper = new THREE.Bone();
       upper.position.set(side * (0.165 * w + 0.02), 0.43, 0);
       this.torso.add(upper);
-      const fore = new THREE.Object3D();
+      const fore = new THREE.Bone();
       fore.position.y = -0.24;
       upper.add(fore);
       bone(upper, [
@@ -362,7 +405,7 @@ export class Character {
     this.torso.add(this.head);
     const R = 0.168;
     const C = V(0, R * 0.95, 0); // head centre in head space
-    const skull = headShape(new THREE.SphereGeometry(R, 28, 20), R);
+    const skull = headShape(new THREE.SphereGeometry(R, 22, 16), R);
     skull.translate(C.x, C.y, C.z);
     const headParts: Part[] = [{ geo: skull, color: look.skin }];
     for (const side of [-1, 1]) {
@@ -382,7 +425,7 @@ export class Character {
     // Cap: covers the crown and back, leaving the forehead open.
     // Tilted back so the front hairline sits high on the forehead (~50 deg from the top) and the
     // back reaches the nape (~125 deg); the bangs then lie over the forehead as separate locks.
-    const cap = new THREE.SphereGeometry(R * 1.045, 26, 16, 0, Math.PI * 2, 0, Math.PI * 0.49);
+    const cap = new THREE.SphereGeometry(R * 1.045, 20, 10, 0, Math.PI * 2, 0, Math.PI * 0.49);
     cap.rotateX(-0.65);
     cap.translate(C.x, C.y + 0.004, C.z - 0.006);
     headParts.push(hairPart(cap));
@@ -446,7 +489,7 @@ export class Character {
     }
 
     if (look.hat) {
-      const brim = lathe([[0.001, 0.0], [0.33, -0.01], [0.36, -0.03], [0.34, 0.0], [0.001, 0.015]], 28);
+      const brim = lathe([[0.001, 0.0], [0.33, -0.01], [0.36, -0.03], [0.34, 0.0], [0.001, 0.015]], 20);
       headParts.push({ geo: tr(brim, C.x, C.y + R * 0.72, C.z - 0.01), color: look.hat });
       const crownPts = new THREE.CatmullRomCurve3([V(0, 0, 0), V(0, 0.18, -0.02), V(0.01, 0.34, -0.09), V(0.06, 0.44, -0.18)]);
       // The pointed crown: a lathe-like cone that bends backward.
@@ -466,7 +509,7 @@ export class Character {
       }
       crown.computeVertexNormals();
       headParts.push({ geo: tr(crown, C.x, C.y + R * 0.72, C.z - 0.01), color: look.hat });
-      headParts.push({ geo: tr(lathe([[0.168, 0.0], [0.165, 0.045]], 24), C.x, C.y + R * 0.74, C.z - 0.01), color: look.trim, outline: false });
+      headParts.push({ geo: tr(lathe([[0.168, 0.0], [0.165, 0.045]], 17), C.x, C.y + R * 0.74, C.z - 0.01), color: look.trim, outline: false });
     }
     bone(this.head, headParts, m);
 
@@ -500,10 +543,10 @@ export class Character {
         g.computeVertexNormals();
         return g;
       };
-      this.capeUpper = new THREE.Object3D();
+      this.capeUpper = new THREE.Bone();
       this.capeUpper.position.set(0, 0.47, -0.088);
       this.torso.add(this.capeUpper);
-      this.capeLower = new THREE.Object3D();
+      this.capeLower = new THREE.Bone();
       this.capeLower.position.y = -0.3;
       this.capeUpper.add(this.capeLower);
       const capeShade: ColorFn = (p) => 0.92 + 0.08 * THREE.MathUtils.smoothstep(p.y, -0.3, 0);
@@ -511,10 +554,13 @@ export class Character {
       bone(this.capeLower, [{ geo: sheet(0.3, 0.4 * w, 0.46 * w), color: look.cape, shade: (p) => 0.85 + 0.07 * THREE.MathUtils.smoothstep(p.y, -0.3, 0), outline: false }], m, 'cloth');
       // Mantle around the shoulders, with a gold clasp.
       bone(this.torso, [
-        { geo: folds(lathe([[0.065, 0.51], [0.15 * w, 0.46], [0.18 * w, 0.4], [0.182 * w, 0.37]], 24, 0.8), 6, 0.05, 0.46, 0.37), color: look.cape },
+        { geo: folds(lathe([[0.065, 0.51], [0.15 * w, 0.46], [0.18 * w, 0.4], [0.182 * w, 0.37]], 17, 0.8), 6, 0.05, 0.46, 0.37), color: look.cape },
         { geo: tr(new THREE.SphereGeometry(0.022, 10, 8).scale(1, 1, 0.5), 0, 0.46, 0.105), color: look.trim, outline: false },
       ], m);
     }
+
+    finalize(this.root, collecting, m);
+    collecting = null;
 
     // Soft contact shadow, so characters sit on the ground on every quality tier.
     const blob = new THREE.Mesh(new THREE.CircleGeometry(0.42, 20).rotateX(-Math.PI / 2), blobMaterial());

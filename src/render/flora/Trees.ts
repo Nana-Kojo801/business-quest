@@ -252,22 +252,34 @@ export function createTrees(atmosphere: Atmosphere, settings: TreeSettings) {
       new THREE.Vector3(s, s * stretch, s),
     );
 
-  // Valley trees: one instanced canopy + trunk per shape variant, at the core's positions.
+  // Valley trees: instanced per shape variant and per 32 m cell, so trees behind the camera
+  // (and outside the shadow box) are culled instead of always being drawn.
   const trees = OBSTACLES.filter((o) => o.kind === 'tree');
+  const CELL = 32;
   for (let variant = 0; variant < 3; variant++) {
     const mine = trees.filter((t) => t.variant === variant);
     if (mine.length === 0) continue;
     const r = rng(500 + variant);
-    const canopy = new THREE.InstancedMesh(canopyGeometry(canopyBlobs(variant, r), CANOPY_PALETTES[variant], 1, variant * 13), canopyMaterial, mine.length);
-    const trunk = new THREE.InstancedMesh(trunkGeometry(variant, variant), trunkMaterial, mine.length);
-    mine.forEach((t, i) => {
-      place(t.x, t.z, t.rot, t.scale, 0.9 + 0.2 * ((t.rot * 7) % 1));
-      canopy.setMatrixAt(i, matrix);
-      trunk.setMatrixAt(i, matrix);
-    });
-    canopy.computeBoundingSphere();
-    trunk.computeBoundingSphere();
-    group.add(canopy, trunk);
+    const canopyGeo = canopyGeometry(canopyBlobs(variant, r), CANOPY_PALETTES[variant], 1, variant * 13);
+    const trunkGeo = trunkGeometry(variant, variant);
+    const cells = new Map<string, typeof mine>();
+    for (const t of mine) {
+      const key = `${Math.floor(t.x / CELL)},${Math.floor(t.z / CELL)}`;
+      if (!cells.has(key)) cells.set(key, []);
+      cells.get(key)!.push(t);
+    }
+    for (const list of cells.values()) {
+      const canopy = new THREE.InstancedMesh(canopyGeo, canopyMaterial, list.length);
+      const trunk = new THREE.InstancedMesh(trunkGeo, trunkMaterial, list.length);
+      list.forEach((t, i) => {
+        place(t.x, t.z, t.rot, t.scale, 0.9 + 0.2 * ((t.rot * 7) % 1));
+        canopy.setMatrixAt(i, matrix);
+        trunk.setMatrixAt(i, matrix);
+      });
+      canopy.computeBoundingSphere();
+      trunk.computeBoundingSphere();
+      group.add(canopy, trunk);
+    }
   }
 
   // Distant trees on the lower mountain slopes: simpler, no collision, lost in the haze.
@@ -281,7 +293,7 @@ export function createTrees(atmosphere: Atmosphere, settings: TreeSettings) {
         { c: new THREE.Vector3(0, 3.0, 0), r: 0.55 },
       ],
       FAR_PALETTE,
-      1,
+      0, // low detail: they are small and hazy
       77,
     );
     const far = new THREE.InstancedMesh(farGeo, canopyMaterial, settings.farCount);

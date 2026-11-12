@@ -50,6 +50,10 @@ export class DialogueBox {
   private full = '';
   private shown = 0;
   private onEnd: (() => void) | null = null;
+  /** Called as characters appear (for typing blips), with the speaker's name. */
+  onType: (speaker: string) => void = () => {};
+  /** Called when a choice is picked or a line is advanced. */
+  onAdvance: () => void = () => {};
   /** Characters revealed per second. */
   speed = 48;
 
@@ -155,13 +159,17 @@ export class DialogueBox {
     }
     const line = this.line;
     if (line.choices) return; // waiting for a choice
+    this.onAdvance();
     this.goto(line.next ?? null);
   }
 
   choose(i: number) {
     if (!this.script || this.shown < this.full.length) return;
     const c = this.line.choices?.[i];
-    if (c) this.goto(c.next);
+    if (c) {
+      this.onAdvance();
+      this.goto(c.next);
+    }
   }
 
   private goto(next: string | null) {
@@ -184,8 +192,10 @@ export class DialogueBox {
   update(dt: number) {
     if (!this.script || this.shown >= this.full.length) return;
     this.shown = Math.min(this.full.length, this.shown + this.speed * dt);
+    const before = this.textEl.textContent?.length ?? 0;
     const n = Math.floor(this.shown);
     this.textEl.textContent = this.full.slice(0, n);
+    if (n > before && /\S/.test(this.full[n - 1] ?? '')) this.onType(this.line.speaker);
     if (n >= this.full.length) this.finishLine();
   }
 }

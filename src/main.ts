@@ -3,7 +3,22 @@ import { Game } from './game';
 const game = new Game(document.getElementById('app')!);
 game.start();
 
+// Fade the loading screen once shaders are ready and a few frames have drawn.
+const loading = document.getElementById('loading');
+void game.warmUp().then(() => {
+  const wait = () => {
+    if (game.frames < 3) return requestAnimationFrame(wait);
+    loading?.classList.add('done');
+    setTimeout(() => loading?.remove(), 1000);
+    game.arrive();
+  };
+  wait();
+});
+
 const quality = () => ({ ...game.view.quality.state, pixelRatio: game.view.renderer.getPixelRatio() });
+
+/** Debug: triangles per top-level scene object (instances counted), for performance work. */
+(window as unknown as { triBreakdown: () => Record<string, number> }).triBreakdown = () => game.view.triangleBreakdown();
 
 /** Debug/test hook. Read by the automated tests; not used by gameplay. */
 Object.defineProperty(window, '__bq', {
@@ -24,6 +39,9 @@ Object.defineProperty(window, '__bq', {
       stage: game.stage,
       pricingOpen: game.pricingOpen,
       marketPlaying: game.marketPlaying,
+      renderInfo: game.view.renderStats,
+      audio: game.audio.state,
+      audioLevel: game.audio.level(),
     };
   },
 });

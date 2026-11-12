@@ -77,6 +77,9 @@ export interface Settings {
   showFps: boolean;
   /** Camera turn sensitivity multiplier. */
   sensitivity: number;
+  /** 0..1 */
+  music: number;
+  sfx: number;
 }
 
 export class Menu {
@@ -203,6 +206,8 @@ export class Menu {
     this.body.innerHTML = `
       <div class="bq-setting"><span class="bq-setting-name">Graphics quality</span><div class="bq-seg" data-testid="quality-setting">${q}</div>
         <small>Auto adjusts to keep the game smooth. Higher looks richer but works your device harder.</small></div>
+      <div class="bq-setting"><label for="bq-music">Music</label><input id="bq-music" class="bq-range" type="range" min="0" max="1" step="0.05" value="${s.music}" data-testid="music-setting"></div>
+      <div class="bq-setting"><label for="bq-sfx">Sound effects &amp; ambience</label><input id="bq-sfx" class="bq-range" type="range" min="0" max="1" step="0.05" value="${s.sfx}"></div>
       <div class="bq-setting"><label for="bq-sens">Camera sensitivity</label><input id="bq-sens" class="bq-range" type="range" min="0.4" max="2" step="0.1" value="${s.sensitivity}"></div>
       <div class="bq-setting"><label class="bq-switch">Show frame rate<input type="checkbox" data-testid="fps-setting" ${s.showFps ? 'checked' : ''}></label></div>`;
     this.body.querySelectorAll<HTMLButtonElement>('[data-q]').forEach((b) =>
@@ -211,6 +216,8 @@ export class Menu {
         this.renderSettings();
       }),
     );
+    this.body.querySelector<HTMLInputElement>('#bq-music')!.addEventListener('input', (e) => this.update({ music: Number((e.target as HTMLInputElement).value) }));
+    this.body.querySelector<HTMLInputElement>('#bq-sfx')!.addEventListener('input', (e) => this.update({ sfx: Number((e.target as HTMLInputElement).value) }));
     this.body.querySelector<HTMLInputElement>('#bq-sens')!.addEventListener('input', (e) => this.update({ sensitivity: Number((e.target as HTMLInputElement).value) }));
     this.body.querySelector<HTMLInputElement>('[data-testid=fps-setting]')!.addEventListener('change', (e) => this.update({ showFps: (e.target as HTMLInputElement).checked }));
   }
@@ -222,7 +229,7 @@ export class Menu {
 }
 
 const KEY = 'bq-settings';
-export const DEFAULT_SETTINGS: Settings = { quality: 'auto', showFps: false, sensitivity: 1 };
+export const DEFAULT_SETTINGS: Settings = { quality: 'auto', showFps: false, sensitivity: 1, music: 0.6, sfx: 0.8 };
 
 export function loadSettings(): Settings {
   try {

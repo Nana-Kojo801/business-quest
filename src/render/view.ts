@@ -200,6 +200,27 @@ export class WorldView {
     if (this.rig.shot) this.rig.shot.cover = f;
   }
 
+  triangleBreakdown() {
+    const out: Record<string, number> = {};
+    for (const child of this.scene.children) {
+      let n = 0;
+      child.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (!m.isMesh || !m.visible) return;
+        const g = m.geometry;
+        const tris = (g.index ? g.index.count : g.attributes.position.count) / 3;
+        const inst = (m as THREE.InstancedMesh).isInstancedMesh ? (m as THREE.InstancedMesh).count : (g as THREE.InstancedBufferGeometry).instanceCount ?? 1;
+        n += tris * (Number.isFinite(inst) ? inst : 1);
+      });
+      const key = child.name || child.type;
+      out[key] = (out[key] ?? 0) + Math.round(n);
+    }
+    return out;
+  }
+
+  /** Draw calls and triangles for the last frame (all passes). */
+  renderStats = { calls: 0, triangles: 0 };
+
   /** Switch quality from settings: a fixed tier, or null for automatic. */
   setQuality(tier: 'low' | 'medium' | 'high' | null) {
     const q = this.quality.state;
@@ -327,6 +348,9 @@ export class WorldView {
     this.particles?.update(time, this.focus);
     this.shafts?.update(time, this.camera);
     this.birds.update(time);
+    this.renderer.info.autoReset = false;
+    this.renderer.info.reset();
     this.pipeline.render(dt);
+    this.renderStats = { calls: this.renderer.info.render.calls, triangles: this.renderer.info.render.triangles };
   }
 }
