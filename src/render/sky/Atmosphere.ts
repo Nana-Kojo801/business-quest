@@ -103,7 +103,11 @@ export class Atmosphere {
   patchMaterial(material: THREE.Material) {
     if (this.patched.has(material) || material instanceof THREE.ShaderMaterial) return;
     this.patched.add(material);
-    material.onBeforeCompile = (shader) => {
+    // Chain onto any shader changes the material already has (e.g. terrain colouring).
+    const previous = material.onBeforeCompile.bind(material);
+    const previousKey = material.customProgramCacheKey.bind(material);
+    material.onBeforeCompile = (shader, renderer) => {
+      previous(shader, renderer);
       Object.assign(shader.uniforms, this.uniforms);
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', '#include <common>\nvarying vec3 vBqWorldPos;')
@@ -112,7 +116,7 @@ export class Atmosphere {
         .replace('#include <common>', `#include <common>\n${ATMOSPHERE_UNIFORMS_GLSL}\n${FOG_UNIFORMS_GLSL}\n${SKY_COLOR_GLSL}`)
         .replace('#include <fog_fragment>', FOG_FRAGMENT_GLSL);
     };
-    material.customProgramCacheKey = () => 'bq-atmosphere';
+    material.customProgramCacheKey = () => previousKey() + '|bq-atmosphere';
     material.needsUpdate = true;
   }
 

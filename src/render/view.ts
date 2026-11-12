@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import type { PlayerId, WorldState } from '../core';
+import { heightAt, type PlayerId, type WorldState } from '../core';
+import { createTerrain } from './terrain/Terrain';
 import { Pipeline } from './pipeline';
 import { QualityManager, initialTier } from './quality';
 import { Atmosphere } from './sky/Atmosphere';
@@ -23,6 +24,7 @@ export class WorldView {
   private playerGeo = new THREE.SphereGeometry(0.5, 32, 16);
   private playerMat = new THREE.MeshStandardMaterial({ color: '#ffc46b', emissive: '#ff8a3d', emissiveIntensity: 1.6 });
   private focus = new THREE.Vector3();
+  private cameraGround = 0;
 
   constructor(private container: HTMLElement) {
     // Antialiasing, tone mapping and colour output are handled by the post-processing pipeline.
@@ -63,32 +65,25 @@ export class WorldView {
   private buildPlaceholderWorld() {
     const world = new THREE.Group();
 
-    // Large enough that its edge is always lost in the fog, so the ground meets the sky cleanly.
-    const ground = new THREE.Mesh(
-      new THREE.CircleGeometry(300, 96).rotateX(-Math.PI / 2),
-      new THREE.MeshStandardMaterial({ color: '#66985c', roughness: 1 }),
-    );
-    world.add(ground);
+    // The terrain extends far past the valley so its edge is always lost in the fog.
+    const terrain = createTerrain();
+    world.add(terrain);
 
-    // Temporary markers so movement is visible until the real world is built.
-    const markerMat = new THREE.MeshStandardMaterial({ color: '#6a5a9a', roughness: 0.8 });
-    const markerGeo = new THREE.ConeGeometry(0.35, 1.2, 6);
-    // Every fifth marker is a glowing crystal, to show off bloom until real props exist.
+    // Placeholder glowing crystals (stand-ins until real props arrive).
     const crystalMat = new THREE.MeshStandardMaterial({ color: '#9fe8ff', emissive: '#5cd6ff', emissiveIntensity: 4 });
     const crystalGeo = new THREE.OctahedronGeometry(0.35);
-    for (let i = 0; i < 60; i++) {
-      const a = i * 2.399963; // golden-angle spiral
-      const r = 2.5 + Math.sqrt(i) * 4.2;
-      const crystal = i % 5 === 2;
-      const m = new THREE.Mesh(crystal ? crystalGeo : markerGeo, crystal ? crystalMat : markerMat);
-      m.position.set(Math.cos(a) * r, crystal ? 0.9 : 0.6, Math.sin(a) * r);
-      if (crystal) m.scale.y = 1.8;
+    const spots: [number, number][] = [[-4, -6], [7, -4], [-10, -4], [4, -14], [-6, -24], [18, -12], [9, -28], [-20, -8]];
+    for (const [x, z] of spots) {
+      const m = new THREE.Mesh(crystalGeo, crystalMat);
+      m.position.set(x, heightAt(x, z) + 0.9, z);
+      m.scale.y = 1.8;
       world.add(m);
     }
 
     this.scene.add(world);
     this.atmosphere.adopt(world);
-    ground.castShadow = false;
+    // Rolling ground casting onto itself at a low sun causes speckled artefacts; it only receives.
+    terrain.castShadow = false;
   }
 
   resize() {
@@ -113,7 +108,6 @@ export class WorldView {
     for (const id of Object.keys(curr.players)) {
       if (!this.players.has(id)) {
         const mesh = new THREE.Mesh(this.playerGeo, this.playerMat);
-        mesh.position.y = 0.5;
         this.atmosphere.adopt(mesh, { cast: true, receive: false });
         this.scene.add(mesh);
         this.players.set(id, mesh);
@@ -131,6 +125,7 @@ export class WorldView {
       const p = prev.players[id] ?? c;
       obj.position.x = p.position.x + (c.position.x - p.position.x) * alpha;
       obj.position.z = p.position.z + (c.position.z - p.position.z) * alpha;
+      obj.position.y = heightAt(obj.position.x, obj.position.z) + 0.5;
       obj.rotation.y = -c.heading;
     }
 
@@ -142,8 +137,11 @@ export class WorldView {
       // Placeholder framing (refined with the camera work later): low enough to show the sky.
       const back = 9;
       const ahead = 4;
-      this.camera.position.set(t.x - fx * back, 4.5, t.z - fz * back);
-      this.camera.lookAt(t.x + fx * ahead, 1.2, t.z + fz * ahead);
+      // Follow the ground height smoothly so small bumps don't jolt the camera.
+      const ground = t.y - 0.5;
+      this.cameraGround += (ground - this.cameraGround) * Math.min(1, dt * 4);
+      this.camera.position.set(t.x - fx * back, this.cameraGround + 4.5, t.z - fz * back);
+      this.camera.lookAt(t.x + fx * ahead, this.cameraGround + 1.2, t.z + fz * ahead);
       this.focus.copy(t);
     }
 

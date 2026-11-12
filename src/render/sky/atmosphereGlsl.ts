@@ -44,7 +44,9 @@ export const FOG_FRAGMENT_GLSL = /* glsl */ `
   float bqD = max(bqDist - bqFogStart, 0.0) * bqFogDensity;
   float bqLow = exp(-max(vBqWorldPos.y, 0.0) * bqFogHeightFalloff);
   float bqFog = 1.0 - exp(-bqD * bqD * (0.55 + 0.45 * bqLow));
-  vec3 bqFogCol = bqSkyColor(normalize(vec3(bqDir.x, 0.015, bqDir.z)));
+  // Fog takes the sky colour just above the horizon in that direction; tall things (mountain
+  // tops) fade into slightly higher, bluer sky so they keep a silhouette.
+  vec3 bqFogCol = bqSkyColor(normalize(vec3(bqDir.x, 0.015 + max(bqDir.y, 0.0) * 0.6, bqDir.z)));
   gl_FragColor.rgb = mix(gl_FragColor.rgb, bqFogCol, clamp(bqFog, 0.0, 1.0));
 }
 `;

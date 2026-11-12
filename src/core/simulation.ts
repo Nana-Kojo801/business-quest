@@ -1,4 +1,5 @@
 import type { Command } from './commands';
+import { TERRAIN, boundaryNormal, isWalkable } from './terrain';
 import type { PlayerState, WorldState } from './types';
 
 export const TICK_RATE = 60;
@@ -7,8 +8,8 @@ export const TICK_DT = 1 / TICK_RATE;
 const MAX_SPEED = 4.5;
 const ACCEL = 30;
 const TURN_RATE = 12;
-/** The playable area is a disc of this radius for now. */
-export const WORLD_RADIUS = 26;
+/** The playable area: the valley floor. */
+export const WORLD_RADIUS = TERRAIN.playRadius;
 
 /** State is plain JSON data, so a JSON round-trip is an exact deep copy. */
 function clone<T>(v: T): T {
@@ -71,20 +72,56 @@ function stepPlayer(p: PlayerState, dt: number) {
   }
 
   // Move in the intended direction (not the heading) so control stays responsive.
+  let dx = 0;
+  let dz = 0;
   if (p.speed > 0 && mag > 0.05) {
-    p.position.x += (p.intent.x / mag) * p.speed * dt;
-    p.position.z += (p.intent.z / mag) * p.speed * dt;
+    dx = (p.intent.x / mag) * p.speed * dt;
+    dz = (p.intent.z / mag) * p.speed * dt;
   } else if (p.speed > 0) {
-    p.position.x += Math.sin(p.heading) * p.speed * dt;
-    p.position.z += -Math.cos(p.heading) * p.speed * dt;
+    dx = Math.sin(p.heading) * p.speed * dt;
+    dz = -Math.cos(p.heading) * p.speed * dt;
+  }
+  if (dx === 0 && dz === 0) return;
+
+  const { x, z } = p.position;
+  if (isWalkable(x + dx, z + dz)) {
+    p.position.x = x + dx;
+    p.position.z = z + dz;
+    return;
   }
 
-  const r = Math.hypot(p.position.x, p.position.z);
-  if (r > WORLD_RADIUS) {
-    p.position.x *= WORLD_RADIUS / r;
-    p.position.z *= WORLD_RADIUS / r;
+  // Blocked (lake, valley edge): keep the part of the motion that runs along the boundary,
+  // so the player glides around shores instead of stopping dead.
+  const n = boundaryNormal(x, z);
+  const tx = -n.z;
+  const tz = n.x;
+  const along = dx * tx + dz * tz;
+  // A small nudge away from the boundary stops the player hugging the exact edge,
+  // where a curved shore would block even a sideways step.
+  const push = Math.abs(along) * 0.35;
+  const candidates: [number, number][] = [
+    [tx * along + n.x * push, tz * along + n.z * push],
+    [tx * along, tz * along],
+  ];
+  // Fallback for awkward corners: angled versions of the original step.
+  for (const angle of SLIDE_ANGLES) {
+    const c = Math.cos(angle);
+    const sn = Math.sin(angle);
+    candidates.push([(dx * c - dz * sn) * c, (dx * sn + dz * c) * c]);
   }
+  for (const [mx, mz] of candidates) {
+    if (Math.abs(mx) + Math.abs(mz) < 1e-6) continue;
+    if (isWalkable(x + mx, z + mz)) {
+      p.position.x = x + mx;
+      p.position.z = z + mz;
+      return;
+    }
+  }
+  p.speed = 0;
 }
+
+/** Directions tried when the straight path is blocked (radians), in a fixed order for determinism. */
+const SLIDE_ANGLES = [0.5, -0.5, 1.0, -1.0, 1.4, -1.4];
 
 /**
  * Deterministic fixed-step simulation. Given the same starting state and the

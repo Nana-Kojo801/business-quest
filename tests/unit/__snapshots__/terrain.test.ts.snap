@@ -1,0 +1,9 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`terrain > known heights do not drift (guards cross-machine agreement) 1`] = `1.7199321200494937`;
+
+exports[`terrain > known heights do not drift (guards cross-machine agreement) 2`] = `4.206194235728274`;
+
+exports[`terrain > known heights do not drift (guards cross-machine agreement) 3`] = `-2.2`;
+
+exports[`terrain > known heights do not drift (guards cross-machine agreement) 4`] = `6.565391630069524`;

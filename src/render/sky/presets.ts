@@ -49,7 +49,7 @@ export const SKY_PRESETS = {
     cloudLitBoost: 1.2,
     cloudShade: '#a08bbd',
     cloudCover: 0.42,
-    fog: { start: 18, density: 0.018, heightFalloff: 0.12 },
+    fog: { start: 24, density: 0.0125, heightFalloff: 0.12 },
   },
   day: {
     sun: { azimuthDeg: 35, elevationDeg: 48, color: '#fff5e6', intensity: 3.2 },
@@ -70,7 +70,7 @@ export const SKY_PRESETS = {
     cloudLitBoost: 1.15,
     cloudShade: '#a6b7d8',
     cloudCover: 0.42,
-    fog: { start: 25, density: 0.012, heightFalloff: 0.1 },
+    fog: { start: 30, density: 0.009, heightFalloff: 0.1 },
   },
   dusk: {
     sun: { azimuthDeg: 8, elevationDeg: 2.5, color: '#ff8a5c', intensity: 2.4 },
@@ -91,7 +91,7 @@ export const SKY_PRESETS = {
     cloudLitBoost: 1.2,
     cloudShade: '#5c4985',
     cloudCover: 0.42,
-    fog: { start: 15, density: 0.02, heightFalloff: 0.12 },
+    fog: { start: 22, density: 0.014, heightFalloff: 0.12 },
   },
 } satisfies Record<string, SkyPreset>;
 

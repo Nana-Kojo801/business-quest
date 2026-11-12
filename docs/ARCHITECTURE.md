@@ -61,3 +61,12 @@ Any new world mesh must go through `adopt`.
 
 Shadows follow the player and are snapped to shadow-map texels to avoid shimmering.
 Shadow resolution is part of the quality tier (off on low).
+
+## Terrain
+
+The land is defined once, as pure math, in `src/core/terrain.ts` (`heightAt`, `isWalkable`,
+`pathMask`, layout in `TERRAIN`). It uses integer hashing rather than `Math.sin`, so every
+browser computes identical heights; a snapshot test guards this. The simulation uses it to keep
+players out of the lake and inside the valley (sliding along boundaries), and the renderer builds
+the ground mesh from it (`src/render/terrain/Terrain.ts`), colouring it in a shader: warm and
+cool grass patches, brush-stroke breakup, sandy shores, worn paths and rock on steep slopes.
