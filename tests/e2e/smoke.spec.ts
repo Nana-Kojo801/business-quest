@@ -93,10 +93,11 @@ test('touch drag moves the player', async ({ page }, info) => {
 test.describe('quality tiers', () => {
   // Correctness, not speed: a small viewport keeps the CPU renderer used in CI fast.
   test.use({ viewport: { width: 270, height: 480 }, deviceScaleFactor: 1 });
+  // Device-independent: run once (phone project), skipping before any browser page starts.
+  test.skip(({ isMobile }) => !isMobile, 'runs on the phone project only');
 
   for (const tier of ['low', 'medium', 'high'] as const) {
-  test(`renders on the ${tier} quality tier`, async ({ page }, info) => {
-    test.skip(info.project.name !== 'phone-portrait', 'tier rendering is device-independent');
+  test(`renders on the ${tier} quality tier`, async ({ page }) => {
     test.setTimeout(60_000);
     const errors = await load(page, `?quality=${tier}&adaptive=0`, 3);
     const d = await readDebug(page);
@@ -119,10 +120,10 @@ test('picks a starting tier by device and shows the debug overlay', async ({ pag
 
 test.describe('sky', () => {
   test.use({ viewport: { width: 270, height: 480 }, deviceScaleFactor: 1 });
+  test.skip(({ isMobile }) => !isMobile, 'runs on the phone project only');
 
   for (const sky of ['goldenHour', 'day', 'dusk']) {
-    test(`${sky} sky renders a gradient above the horizon`, async ({ page }, info) => {
-      test.skip(info.project.name !== 'phone-portrait', 'sky rendering is device-independent');
+    test(`${sky} sky renders a gradient above the horizon`, async ({ page }) => {
       test.setTimeout(60_000);
       const errors = await load(page, `?quality=low&adaptive=0&sky=${sky}`, 3);
       const png = await page.locator('#app canvas').screenshot();
