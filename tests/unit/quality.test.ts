@@ -25,8 +25,8 @@ describe('quality', () => {
     q.onChange = (s, tierChanged) => changes.push(tierChanged ? `tier:${s.tier}` : `scale:${s.scale.toFixed(1)}`);
     feed(q, 40, 1600); // one evaluation at 25 fps
     expect(q.state.scale).toBeCloseTo(0.9);
-    feed(q, 40, 1600 * 3);
-    expect(q.state.scale).toBeCloseTo(TIER_SETTINGS.high.minScale);
+    while (q.state.scale > TIER_SETTINGS.high.minScale + 1e-6) feed(q, 40, 1600);
+    expect(q.state.tier).toBe('high');
     feed(q, 40, 1600);
     expect(q.state.tier).toBe('medium');
     expect(q.state.scale).toBe(1);
@@ -53,6 +53,11 @@ describe('quality', () => {
     const q = new QualityManager('high', false);
     feed(q, 100, 20000);
     expect(q.state).toMatchObject({ tier: 'high', scale: 1 });
+  });
+
+  it('a tier at its lowest resolution is never blurrier than the tier below', () => {
+    expect(TIER_SETTINGS.high.maxPixelRatio * TIER_SETTINGS.high.minScale).toBeGreaterThan(TIER_SETTINGS.medium.maxPixelRatio);
+    expect(TIER_SETTINGS.medium.maxPixelRatio * TIER_SETTINGS.medium.minScale).toBeGreaterThan(TIER_SETTINGS.low.maxPixelRatio);
   });
 
   it('caps pixel ratio per tier and applies scale', () => {

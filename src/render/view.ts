@@ -49,22 +49,24 @@ export class WorldView {
   private buildPlaceholderWorld() {
     const s = this.scene;
     s.background = new THREE.Color('#f2a97c');
-    s.fog = new THREE.Fog('#f2a97c', 12, 40);
-    s.add(new THREE.HemisphereLight('#ffe2c4', '#5a4a7a', 1.2));
-    const sun = new THREE.DirectionalLight('#fff1d6', 2.2);
+    // Fog starts well past the player so nearby things keep their contrast.
+    s.fog = new THREE.Fog('#f2a97c', 22, 75);
+    // Low ambient, strong sun: surfaces get a lit side and a shadow side.
+    s.add(new THREE.HemisphereLight('#ffd9b8', '#3a2f5c', 0.55));
+    const sun = new THREE.DirectionalLight('#fff0d4', 3.2);
     sun.position.set(6, 10, 4);
     s.add(sun);
 
     s.add(new THREE.Mesh(
       new THREE.CircleGeometry(30, 64).rotateX(-Math.PI / 2),
-      new THREE.MeshStandardMaterial({ color: '#7fb07a', roughness: 1 }),
+      new THREE.MeshStandardMaterial({ color: '#66985c', roughness: 1 }),
     ));
 
     // Temporary markers so movement is visible until the real world is built.
-    const markerMat = new THREE.MeshStandardMaterial({ color: '#8a7fb0', roughness: 0.8 });
+    const markerMat = new THREE.MeshStandardMaterial({ color: '#6a5a9a', roughness: 0.8 });
     const markerGeo = new THREE.ConeGeometry(0.35, 1.2, 6);
     // Every fifth marker is a glowing crystal, to show off bloom until real props exist.
-    const crystalMat = new THREE.MeshStandardMaterial({ color: '#9fe8ff', emissive: '#5cd6ff', emissiveIntensity: 2.2 });
+    const crystalMat = new THREE.MeshStandardMaterial({ color: '#9fe8ff', emissive: '#5cd6ff', emissiveIntensity: 4 });
     const crystalGeo = new THREE.OctahedronGeometry(0.35);
     for (let i = 0; i < 40; i++) {
       const a = i * 2.399963; // golden-angle spiral

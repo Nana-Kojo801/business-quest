@@ -15,7 +15,10 @@ export const TIERS: Tier[] = ['low', 'medium', 'high'];
 export interface TierSettings {
   /** Upper bound on device pixel ratio. */
   maxPixelRatio: number;
-  /** Lowest fraction of maxPixelRatio adaptive scaling may go to before the tier drops. */
+  /**
+   * Lowest fraction of maxPixelRatio adaptive scaling may go to before the tier
+   * drops. Chosen so a tier never ends up blurrier than the tier below it.
+   */
   minScale: number;
   /** Painterly filter radius; 0 turns it off. */
   painterlyRadius: number;
@@ -27,8 +30,8 @@ export interface TierSettings {
 
 export const TIER_SETTINGS: Record<Tier, TierSettings> = {
   low: { maxPixelRatio: 1, minScale: 0.6, painterlyRadius: 0, bloomLevels: 4, multisampling: 0 },
-  medium: { maxPixelRatio: 1.5, minScale: 0.6, painterlyRadius: 2, bloomLevels: 6, multisampling: 0 },
-  high: { maxPixelRatio: 2, minScale: 0.6, painterlyRadius: 3, bloomLevels: 8, multisampling: 4 },
+  medium: { maxPixelRatio: 1.5, minScale: 0.7, painterlyRadius: 2, bloomLevels: 6, multisampling: 0 },
+  high: { maxPixelRatio: 2, minScale: 0.8, painterlyRadius: 3, bloomLevels: 8, multisampling: 4 },
 };
 
 const TARGET_FRAME_MS = 1000 / 55; // aim for ~55+ fps

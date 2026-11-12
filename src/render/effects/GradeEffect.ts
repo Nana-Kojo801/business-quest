@@ -4,7 +4,10 @@ import { Uniform, Vector3 } from 'three';
 /**
  * Colour grading for the final image, applied after tone mapping:
  * lift/gamma/gain, split toning (cool shadows, warm highlights), saturation,
- * contrast, an aspect-aware vignette, and a faint canvas texture.
+ * contrast and an aspect-aware vignette.
+ *
+ * Split toning multiplies rather than adds, so black stays black: adding tint
+ * to shadows lifts them and makes the image look milky.
  */
 const fragment = /* glsl */ `
 uniform vec3 lift;
@@ -15,14 +18,6 @@ uniform vec3 highlightTint;
 uniform float saturation;
 uniform float contrast;
 uniform float vignette;
-uniform float canvas;
-
-float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-float noise(vec2 p) {
-  vec2 i = floor(p), f = fract(p);
-  vec2 u = f * f * (3.0 - 2.0 * f);
-  return mix(mix(hash(i), hash(i + vec2(1, 0)), u.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y);
-}
 
 void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor) {
   // Grade in a perceptual (gamma) space, then return to linear.
@@ -32,21 +27,16 @@ void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor)
   c = pow(max(c, 0.0), 1.0 / gamma);
 
   float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
-  c += shadowTint * (1.0 - smoothstep(0.0, 0.55, l));
-  c += highlightTint * smoothstep(0.45, 1.0, l);
+  c *= mix(shadowTint, highlightTint, smoothstep(0.15, 0.85, l));
 
   l = dot(c, vec3(0.2126, 0.7152, 0.0722));
   c = mix(vec3(l), c, saturation);
-  c = (c - 0.5) * contrast + 0.5;
+  // Contrast around a mid-grey pivot.
+  c = (c - 0.45) * contrast + 0.45;
 
   // Vignette measured in screen-height units so portrait and landscape match.
   vec2 d = (uv - 0.5) * vec2(aspect, 1.0);
   c *= 1.0 - vignette * smoothstep(0.25, 0.95, length(d));
-
-  // Canvas: two octaves of soft noise, tied to screen pixels.
-  vec2 px = uv * resolution;
-  float n = noise(px * 0.35) * 0.6 + noise(px * 0.9) * 0.4;
-  c *= 1.0 + (n - 0.5) * canvas;
 
   outputColor = vec4(pow(clamp(c, 0.0, 1.0), vec3(2.2)), inputColor.a);
 }
@@ -61,19 +51,18 @@ export interface GradeSettings {
   saturation: number;
   contrast: number;
   vignette: number;
-  canvas: number;
 }
 
 export const DEFAULT_GRADE: GradeSettings = {
-  lift: [0.02, 0.0, 0.05],
-  gamma: [1.0, 1.0, 1.02],
-  gain: [1.04, 1.0, 0.97],
-  shadowTint: [0.01, -0.005, 0.04],
-  highlightTint: [0.03, 0.015, -0.02],
-  saturation: 1.12,
-  contrast: 1.06,
-  vignette: 0.32,
-  canvas: 0.05,
+  lift: [0, 0, 0],
+  gamma: [1.0, 1.0, 1.0],
+  gain: [1.02, 1.0, 0.98],
+  /** Multipliers: shadows lean violet-blue, highlights lean gold. */
+  shadowTint: [0.94, 0.95, 1.08],
+  highlightTint: [1.05, 1.01, 0.93],
+  saturation: 1.04,
+  contrast: 1.12,
+  vignette: 0.28,
 };
 
 export class GradeEffect extends Effect {
@@ -89,7 +78,6 @@ export class GradeEffect extends Effect {
         ['saturation', new Uniform(s.saturation)],
         ['contrast', new Uniform(s.contrast)],
         ['vignette', new Uniform(s.vignette)],
-        ['canvas', new Uniform(s.canvas)],
       ]),
     });
   }

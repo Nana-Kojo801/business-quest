@@ -6,13 +6,15 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? 'github' : 'list',
   use: {
-    baseURL: 'http://localhost:4173',
+    baseURL: 'http://localhost:4174',
     launchOptions: { args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] },
   },
+  // Always build and serve fresh on a dedicated port, so tests never run
+  // against a stale build from a server that happens to be running already.
   webServer: {
-    command: 'npm run build && npm run preview',
-    url: 'http://localhost:4173',
-    reuseExistingServer: !process.env.CI,
+    command: 'npm run build && npx vite preview --port 4174 --strictPort',
+    url: 'http://localhost:4174',
+    reuseExistingServer: false,
     timeout: 120_000,
   },
   projects: [
