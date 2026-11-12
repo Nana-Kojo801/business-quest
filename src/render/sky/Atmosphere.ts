@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { NOISE_GLSL, getNoiseTexture } from '../noiseTexture';
 import { SKY_PRESETS, sunDirection, type SkyPreset, type SkyPresetName } from './presets';
 import {
   ATMOSPHERE_UNIFORMS_GLSL,
@@ -35,6 +36,7 @@ export class Atmosphere {
     uCloudLit: { value: new THREE.Color() },
     uCloudShade: { value: new THREE.Color() },
     uCloudCover: { value: 0.5 },
+    bqNoise: { value: getNoiseTexture() },
   };
 
   readonly sky: THREE.Mesh;
@@ -166,17 +168,10 @@ export class Atmosphere {
         uniform float uCloudCover;
         varying vec3 vDir;
 
-        float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
-        float noise(vec2 p) {
-          vec2 i = floor(p), f = fract(p);
-          vec2 u = f * f * (3.0 - 2.0 * f);
-          return mix(mix(hash(i), hash(i + vec2(1, 0)), u.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y);
-        }
+        ${NOISE_GLSL}
+        // Four baked octaves in one lookup, plus a rotated finer lookup for extra detail.
         float fbm(vec2 p) {
-          float v = 0.0, a = 0.5;
-          mat2 r = mat2(0.8, -0.6, 0.6, 0.8);
-          for (int i = 0; i < 5; i++) { v += a * noise(p); p = r * p * 2.03; a *= 0.5; }
-          return v;
+          return bqFbm(p) * 0.82 + bqNoiseC(mat2(0.8, -0.6, 0.6, 0.8) * p * 6.0) * 0.18;
         }
 
         void main() {

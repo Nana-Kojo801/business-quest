@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { TERRAIN, heightAt, pathMask } from '../../core';
+import { NOISE_GLSL, getNoiseTexture } from '../noiseTexture';
 
 /** Terrain palette (sRGB). Tuned for golden-hour light. */
 const PALETTE = {
@@ -60,22 +61,16 @@ varying vec3 vTWorld;
 varying vec3 vTNormal;
 uniform vec3 tGrassCool, tGrassWarm, tGrassDeep, tMeadowGold, tDirt, tDirtDark, tSand, tLakeBed, tRock, tRockWarm;
 uniform float tWaterLevel;
-
-float tHash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
-float tNoise(vec2 p) {
-  vec2 i = floor(p), f = fract(p);
-  vec2 u = f * f * (3.0 - 2.0 * f);
-  return mix(mix(tHash(i), tHash(i + vec2(1, 0)), u.x), mix(tHash(i + vec2(0, 1)), tHash(i + vec2(1, 1)), u.x), u.y);
-}
+${NOISE_GLSL}
 
 vec3 terrainColor() {
   vec2 p = vTWorld.xz;
-  float n1 = tNoise(p * 0.06);            // broad colour patches
-  float n2 = tNoise(p * 0.31 + 17.0);     // medium breakup
-  float n3 = tNoise(p * 0.85 + 41.0);     // fine dabs, visible up close
+  float n1 = bqNoiseA(p * 0.06);            // broad colour patches
+  float n2 = bqNoiseB(p * 0.31 + 17.0);     // medium breakup
+  float n3 = bqNoiseC(p * 0.85 + 41.0);     // fine dabs, visible up close
   // Brush strokes: noise stretched along one diagonal, like loaded-brush dabs.
   vec2 bp = vec2(dot(p, vec2(0.8, 0.6)) * 0.9, dot(p, vec2(-0.6, 0.8)) * 0.22);
-  float stroke = tNoise(bp) * 0.65 + tNoise(bp * 2.3 + 5.0) * 0.35;
+  float stroke = bqNoiseD(bp) * 0.65 + bqNoiseA(bp * 2.3 + 5.0) * 0.35;
 
   // Grass: warm and cool greens in soft patches, deep green in hollows, gold meadow highlights.
   vec3 c = mix(tGrassCool, tGrassWarm, smoothstep(0.25, 0.75, n1 * 0.7 + n3 * 0.3));
@@ -105,7 +100,10 @@ vec3 terrainColor() {
 
 export function createTerrain(): THREE.Mesh {
   const material = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0 });
-  const uniforms: Record<string, THREE.IUniform> = { tWaterLevel: { value: TERRAIN.waterLevel } };
+  const uniforms: Record<string, THREE.IUniform> = {
+    tWaterLevel: { value: TERRAIN.waterLevel },
+    bqNoise: { value: getNoiseTexture() },
+  };
   for (const [k, v] of Object.entries(PALETTE)) {
     uniforms['t' + k[0].toUpperCase() + k.slice(1)] = { value: new THREE.Color(v) };
   }

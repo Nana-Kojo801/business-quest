@@ -48,7 +48,7 @@ export const SKY_PRESETS = {
     cloudLit: '#fff0dc',
     cloudLitBoost: 1.2,
     cloudShade: '#a08bbd',
-    cloudCover: 0.42,
+    cloudCover: 0.46,
     fog: { start: 24, density: 0.0125, heightFalloff: 0.12 },
   },
   day: {
