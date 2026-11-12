@@ -40,3 +40,24 @@ describe('structures', () => {
     expect(isWalkable(tower.x + tower.r * 0.9, tower.z)).toBe(false);
   });
 });
+
+describe('villagers', () => {
+  it('stand on dry land, clear of trees and rocks, and block movement', async () => {
+    const { NPCS, OBSTACLES, TERRAIN, heightAt, isWalkable, distToPath } = await import('../../src/core');
+    expect(NPCS.length).toBeGreaterThanOrEqual(2);
+    for (const n of NPCS) {
+      expect(heightAt(n.x, n.z), n.id).toBeGreaterThan(TERRAIN.waterLevel + 0.5);
+      for (const o of OBSTACLES) expect(Math.hypot(o.x - n.x, o.z - n.z), `${n.id} vs ${o.kind}`).toBeGreaterThan(o.r + n.r);
+      expect(isWalkable(n.x, n.z)).toBe(false);
+      expect(distToPath(n.x, n.z), `${n.id} off the path`).toBeGreaterThan(0.8);
+    }
+  });
+
+  it('the keeper can be walked up to from the path', async () => {
+    const { NPCS, isWalkable } = await import('../../src/core');
+    const k = NPCS.find((n) => n.id === 'keeper')!;
+    const fx = k.x + Math.sin(k.rot) * 1.0;
+    const fz = k.z + Math.cos(k.rot) * 1.0;
+    expect(isWalkable(fx, fz)).toBe(true);
+  });
+});

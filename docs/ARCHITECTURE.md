@@ -113,3 +113,12 @@ falling from blossom trees; light shafts as camera-facing strips on an artistic,
 axis leaning toward the sun (an exactly sun-aligned beam collapses on screen when the sun is
 ahead); and a small flock of birds with wing flaps in the vertex shader. Counts are part of the
 quality tier (`particles`, `lightShafts`).
+
+## Characters
+
+`src/render/characters/Character.ts` builds anime-style characters from code: a pivot skeleton
+(hips, torso, head, arms, legs, cape), one merged vertex-coloured mesh per pivot, a shared
+three-band cel-shading material with a sunlit rim, ink outlines (inverted hull), and a soft
+contact shadow. Animation is procedural: stride driven by distance travelled, idle breathing and
+glances, a cape that lifts with speed. Appearances live in `looks.ts`. Villagers are placed in
+`src/core/npcs.ts` (they block movement) and turn to face a nearby player.

@@ -1,5 +1,7 @@
 import * as THREE from 'three';
-import { heightAt, type PlayerId, type WorldState } from '../core';
+import { NPCS, heightAt, type Npc, type PlayerId, type WorldState } from '../core';
+import { Character, updateCharacterLighting } from './characters/Character';
+import { LOOKS } from './characters/looks';
 import { createTerrain } from './terrain/Terrain';
 import { createWater } from './water/Water';
 import { createField } from './flora/Field';
@@ -29,9 +31,8 @@ export class WorldView {
   readonly pipeline: Pipeline;
   readonly atmosphere: Atmosphere;
 
-  private players = new Map<PlayerId, THREE.Object3D>();
-  private playerGeo = new THREE.SphereGeometry(0.5, 32, 16);
-  private playerMat = new THREE.MeshStandardMaterial({ color: '#ffc46b', emissive: '#ff8a3d', emissiveIntensity: 1.6 });
+  private players = new Map<PlayerId, Character>();
+  private npcs: { npc: Npc; character: Character; yaw: number }[] = [];
   private focus = new THREE.Vector3();
   private cameraGround = 0;
   private water: ReturnType<typeof createWater>;
@@ -85,6 +86,7 @@ export class WorldView {
     this.scene.add(this.birds.mesh);
     this.buildPlaceholderWorld();
     this.buildFields();
+    this.buildVillagers();
     window.addEventListener('resize', () => this.resize());
     this.resize();
   }
@@ -101,6 +103,16 @@ export class WorldView {
     this.atmosphere.adopt(world);
     // Rolling ground casting onto itself at a low sun causes speckled artefacts; it only receives.
     terrain.castShadow = false;
+  }
+
+  private buildVillagers() {
+    NPCS.forEach((npc, i) => {
+      const character = new Character(LOOKS[npc.look], this.atmosphere, 3.1 + i * 5.7);
+      character.root.position.set(npc.x, heightAt(npc.x, npc.z), npc.z);
+      character.root.rotation.y = npc.rot;
+      this.scene.add(character.root);
+      this.npcs.push({ npc, character, yaw: npc.rot });
+    });
   }
 
   /** (Re)build vegetation and rocks for the current quality tier. */
@@ -157,41 +169,64 @@ export class WorldView {
   render(prev: WorldState, curr: WorldState, alpha: number, followId: PlayerId | null, dt: number) {
     this.quality.sample(dt * 1000);
 
-    // Add/remove meshes to match the players in state.
+    // Add/remove characters to match the players in state.
     for (const id of Object.keys(curr.players)) {
       if (!this.players.has(id)) {
-        const mesh = new THREE.Mesh(this.playerGeo, this.playerMat);
-        this.atmosphere.adopt(mesh, { cast: true, receive: false });
-        this.scene.add(mesh);
-        this.players.set(id, mesh);
+        const character = new Character(LOOKS.player, this.atmosphere, this.players.size * 7.3);
+        this.scene.add(character.root);
+        this.players.set(id, character);
       }
     }
-    for (const [id, obj] of this.players) {
+    for (const [id, ch] of this.players) {
       if (!curr.players[id]) {
-        this.scene.remove(obj);
+        this.scene.remove(ch.root);
         this.players.delete(id);
       }
     }
 
-    for (const [id, obj] of this.players) {
+    for (const [id, ch] of this.players) {
       const c = curr.players[id];
       const p = prev.players[id] ?? c;
+      const obj = ch.root;
       obj.position.x = p.position.x + (c.position.x - p.position.x) * alpha;
       obj.position.z = p.position.z + (c.position.z - p.position.z) * alpha;
-      obj.position.y = heightAt(obj.position.x, obj.position.z) + 0.5;
-      obj.rotation.y = -c.heading;
+      obj.position.y = heightAt(obj.position.x, obj.position.z);
+      // Heading 0 faces -z; the model faces +z, hence pi - heading. Interpolate the short way round.
+      let dh = c.heading - p.heading;
+      dh = Math.atan2(Math.sin(dh), Math.cos(dh));
+      obj.rotation.y = Math.PI - (p.heading + dh * alpha);
+      ch.update(dt, performance.now() / 1000, p.speed + (c.speed - p.speed) * alpha);
+    }
+
+    // Villagers idle in place, turning to face a nearby player.
+    const me = followId ? this.players.get(followId) : undefined;
+    for (const v of this.npcs) {
+      let target = v.npc.rot;
+      if (me) {
+        const dx = me.root.position.x - v.npc.x;
+        const dz = me.root.position.z - v.npc.z;
+        if (dx * dx + dz * dz < 5.5 * 5.5) target = Math.atan2(dx, dz);
+      }
+      let d = target - v.yaw;
+      d = Math.atan2(Math.sin(d), Math.cos(d));
+      // The head turns first, the body follows more slowly.
+      v.yaw += d * Math.min(1, dt * 1.6);
+      v.character.root.rotation.y = v.yaw;
+      const headTurn = target - v.yaw;
+      v.character.lookTarget = THREE.MathUtils.clamp(Math.atan2(Math.sin(headTurn), Math.cos(headTurn)), -1, 1);
+      v.character.update(dt, performance.now() / 1000, 0);
     }
 
     const target = followId ? this.players.get(followId) : undefined;
     if (target) {
-      const t = target.position;
+      const t = target.root.position;
       const fx = Math.sin(this.cameraYaw);
       const fz = -Math.cos(this.cameraYaw);
       // Placeholder framing (refined with the camera work later): low enough to show the sky.
       const back = 9;
       const ahead = 4;
       // Follow the ground height smoothly so small bumps don't jolt the camera.
-      const ground = t.y - 0.5;
+      const ground = t.y;
       this.cameraGround += (ground - this.cameraGround) * Math.min(1, dt * 4);
       this.camera.position.set(t.x - fx * back, this.cameraGround + 4.5, t.z - fz * back);
       this.camera.lookAt(t.x + fx * ahead, this.cameraGround + 1.2, t.z + fz * ahead);
@@ -201,6 +236,7 @@ export class WorldView {
     const time = performance.now() / 1000;
     this.atmosphere.update(time, this.camera, this.focus);
     this.water.update(time);
+    updateCharacterLighting(this.atmosphere);
     for (const f of this.fields) f.update(this.focus, time);
     this.trees?.update(time, this.camera, this.focus);
     this.buildings.update(time, this.focus);
