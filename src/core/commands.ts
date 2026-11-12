@@ -9,5 +9,7 @@ export type Command =
   | { type: 'join'; playerId: PlayerId; x: number; z: number }
   | { type: 'leave'; playerId: PlayerId }
   | { type: 'move'; playerId: PlayerId; x: number; z: number }
+  /** Put a player at a spot and facing (scripted scenes). */
+  | { type: 'place'; playerId: PlayerId; x: number; z: number; heading: number }
   /** Talk to / use whatever is in reach (see interactTarget). */
   | { type: 'interact'; playerId: PlayerId };

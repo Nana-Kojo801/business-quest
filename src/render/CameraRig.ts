@@ -27,6 +27,8 @@ export class CameraRig {
   sensitivity = 1;
   /** While set, the camera frames a two-person conversation instead of following. */
   conversation: { a: THREE.Vector3; b: THREE.Vector3; cover: number } | null = null;
+  /** An explicit camera pose for scripted scenes (wins over conversation). */
+  shot: { pos: THREE.Vector3; look: THREE.Vector3; cover: number } | null = null;
   private convBlend = 0;
   private convPos = new THREE.Vector3();
   private convLook = new THREE.Vector3();
@@ -112,8 +114,17 @@ export class CameraRig {
     pos.y += Math.max(0, this.camHeightBoost);
 
     // Conversation shot: from the side of the pair, both in frame, faces kept above the dialogue box.
-    this.convBlend += ((this.conversation ? 1 : 0) - this.convBlend) * ease(3.5);
-    if (this.conversation) {
+    this.convBlend += ((this.conversation || this.shot ? 1 : 0) - this.convBlend) * ease(3.5);
+    if (this.shot) {
+      const { pos: sp, look, cover } = this.shot;
+      this.convPos.copy(sp);
+      const d = sp.distanceTo(look);
+      const fovRad = (this.camera.fov * Math.PI) / 180;
+      // Tilt the aim down so the subject sits in the clear area above any panel.
+      const dir = look.clone().sub(sp).normalize();
+      const upv = new THREE.Vector3(0, 1, 0).sub(dir.clone().multiplyScalar(dir.y)).normalize();
+      this.convLook.copy(look).addScaledVector(upv, -Math.tan(fovRad / 2) * d * cover);
+    } else if (this.conversation) {
       const { a, b, cover } = this.conversation;
       const mid = a.clone().add(b).multiplyScalar(0.5);
       const ab = b.clone().sub(a);

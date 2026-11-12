@@ -306,3 +306,83 @@ test('walking toward the lake shows water', async ({ page }, info) => {
   expect(blueShare).toBeGreaterThan(0.05);
   expect(errors).toEqual([]);
 });
+
+test.describe('the first quest', () => {
+  test.use({ viewport: { width: 360, height: 700 } });
+
+  test('help Mira price her peaches: shortage, then balance, then the storm, then the debrief', async ({ page }, info) => {
+    test.skip(info.project.name !== 'desktop', 'one run is enough (desktop for keyboard)');
+    test.setTimeout(300_000);
+    const errors = await load(page, '?quality=low&adaptive=0&quest=market&spawn=5.16,-6.28', 3);
+    const dbg = () => readDebug(page) as Promise<Debug & { stage: string; pricingOpen: boolean; marketPlaying: boolean }>;
+    const tapThrough = async (until: () => Promise<boolean>) => {
+      for (let i = 0; i < 20 && !(await until()); i++) {
+        await page.getByTestId('dialogue').dispatchEvent('pointerdown');
+        await page.waitForTimeout(150);
+      }
+    };
+    const setPrice = async (p: number) => {
+      await page.getByTestId('price-range').fill(String(p));
+      await expect(page.getByTestId('price-value')).toContainText(String(p));
+    };
+    const openAndWait = async () => {
+      await page.getByTestId('open-stall').click();
+      await expect.poll(async () => (await dbg()).marketPlaying, { timeout: 30_000 }).toBe(true);
+      await expect.poll(async () => (await dbg()).marketPlaying, { timeout: 120_000 }).toBe(false);
+      await expect(page.getByTestId('price-result')).toBeVisible();
+    };
+
+    // Mira asks for help.
+    await expect.poll(async () => (await dbg()).actionTarget, { timeout: 20_000 }).toBe('merchant');
+    await page.keyboard.press('KeyE');
+    await tapThrough(async () => (await dbg()).pricingOpen);
+    await expect(page.getByTestId('pricing')).toHaveClass(/open/);
+
+    // Too cheap: a shortage; the Lens shows who would buy.
+    await setPrice(4);
+    await expect(page.getByTestId('lens-tag-1')).toHaveClass(/on/); // limit 12
+    await expect(page.getByTestId('lens-tag-2')).not.toHaveClass(/on/); // limit 3
+    await openAndWait();
+    await expect(page.getByTestId('price-result')).toContainText('Not enough peaches');
+    await page.getByTestId('result-next').click();
+
+    // The balancing price.
+    await setPrice(7);
+    await openAndWait();
+    await expect(page.getByTestId('price-result')).toContainText('Every peach sold');
+    await page.getByTestId('result-next').click();
+
+    // The storm: three peaches; the old price leaves people without.
+    await tapThrough(async () => (await dbg()).pricingOpen && (await page.getByTestId('open-stall').count()) > 0);
+    await setPrice(7);
+    await openAndWait();
+    await expect(page.getByTestId('price-result')).toContainText('Not enough peaches');
+    await page.getByTestId('result-next').click();
+    await setPrice(9);
+    await openAndWait();
+    await expect(page.getByTestId('price-result')).toContainText('Every peach sold');
+    await page.getByTestId('result-next').click();
+    await tapThrough(async () => (await dbg()).mode === 'explore');
+    await expect.poll(async () => (await dbg()).stage, { timeout: 20_000 }).toBe('debrief');
+    expect(errors).toEqual([]);
+  });
+
+  test('the debrief completes the quest and fills the Codex', async ({ page }, info) => {
+    test.skip(info.project.name !== 'desktop');
+    test.setTimeout(120_000);
+    await load(page, '?quality=low&adaptive=0&quest=debrief&spawn=7.66,-22.17', 3);
+    await expect.poll(async () => (await readDebug(page)).actionTarget, { timeout: 20_000 }).toBe('keeper');
+    await page.keyboard.press('KeyE');
+    await expect(page.getByTestId('dialogue')).toHaveClass(/open/);
+    for (let i = 0; i < 20 && (await readDebug(page)).mode !== 'explore'; i++) {
+      await page.getByTestId('dialogue').dispatchEvent('pointerdown');
+      if (await page.getByTestId('choice-1').isVisible()) await page.getByTestId('choice-1').dispatchEvent('pointerdown');
+      await page.waitForTimeout(150);
+    }
+    await expect.poll(async () => ((await readDebug(page)) as Debug & { stage: string }).stage, { timeout: 20_000 }).toBe('done');
+    await page.getByTestId('menu-button').dispatchEvent('pointerdown');
+    await page.getByTestId('tab-codex').click();
+    await expect(page.getByTestId('codex')).toContainText('Equilibrium price');
+    await expect(page.getByTestId('codex')).toContainText('Shortage');
+  });
+});

@@ -21,6 +21,9 @@ Object.defineProperty(window, '__bq', {
       mode: game.mode,
       objective: game.objectiveText,
       met: [...game.met],
+      stage: game.stage,
+      pricingOpen: game.pricingOpen,
+      marketPlaying: game.marketPlaying,
     };
   },
 });

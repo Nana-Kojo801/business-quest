@@ -7,3 +7,4 @@ export * from './flora';
 export * from './npcs';
 export * from './collision';
 export * from './interact';
+export * from './market';

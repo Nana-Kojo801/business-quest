@@ -18,6 +18,8 @@ import { QualityManager, initialTier } from './quality';
 import { Atmosphere } from './sky/Atmosphere';
 import { presetFromParams } from './sky/presets';
 
+const FAR_AWAY = new THREE.Vector3(0, -1000, 0);
+
 /**
  * Draws the world. Reads game state every frame and never changes it.
  * Owns all three.js objects.
@@ -182,11 +184,20 @@ export class WorldView {
   }
   endConversation() {
     this.rig.conversation = null;
+    this.rig.shot = null;
+  }
+  /** Hold the camera at a scripted pose. */
+  startShot(pos: { x: number; y: number; z: number }, look: { x: number; y: number; z: number }) {
+    this.rig.shot = { pos: new THREE.Vector3(pos.x, pos.y, pos.z), look: new THREE.Vector3(look.x, look.y, look.z), cover: this.convCover };
+  }
+  get portrait() {
+    return this.camera.aspect < 1;
   }
   /** Fraction of the screen covered by the dialogue box (keeps faces above it). */
   setConversationCover(f: number) {
     this.convCover = f;
     if (this.rig.conversation) this.rig.conversation.cover = f;
+    if (this.rig.shot) this.rig.shot.cover = f;
   }
 
   /** Switch quality from settings: a fixed tier, or null for automatic. */
@@ -309,8 +320,10 @@ export class WorldView {
     this.water.update(time);
     updateCharacterLighting(this.atmosphere);
     for (const f of this.fields) f.update(this.focus, time);
-    this.trees?.update(time, this.camera, this.focus);
-    this.buildings.update(time, this.focus);
+    // Scripted shots frame things on purpose, so nothing needs dissolving out of the way.
+    const fadeFocus = this.rig.shot ? FAR_AWAY : this.focus;
+    this.trees?.update(time, this.camera, fadeFocus);
+    this.buildings.update(time, fadeFocus);
     this.particles?.update(time, this.focus);
     this.shafts?.update(time, this.camera);
     this.birds.update(time);

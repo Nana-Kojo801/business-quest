@@ -159,3 +159,15 @@ Marcellus for titles, Nunito for text; SVG icons in `icons.ts`).
   ignored outside explore, and a conversation swings the camera to a two-shot that keeps faces
   above the dialogue box (`CameraRig.conversation`).
 - UI files never import three.js; anything needing 3D (screen projection) goes through the view.
+
+## Quests (first slice)
+
+- `src/core/market.ts`: pure market rules (willingness to pay, quantity demanded, settle a day,
+  clearing prices). `place` command for scripted positioning.
+- `src/content/`: dialogue scripts, market data (shoppers' limits, rounds), Codex entries.
+- `src/quests/firstQuests.ts`: hand-written stage machine for the opening (meet → return →
+  market → debrief → done); the general quest engine (#18) replaces it.
+- `src/render/scenes/MarketScene.ts`: the market crowd (raised hands, buyers walk to the counter,
+  those who missed out stomp off) and its camera shot. `src/ui/pricing.ts`: price panel, results,
+  and the Ledger Lens tags above heads.
+- Debug: `?quest=meet|return|market|debrief|done` jumps to a stage.

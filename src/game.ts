@@ -1,19 +1,22 @@
 import { NPCS, Simulation, TICK_DT, heightAt, interactTarget, type PlayerId, type WorldState } from './core';
-import { SCRIPTS } from './content/dialogue';
 import { Input } from './input/devices';
 import { LocalController } from './input/controller';
 import { LocalTransport, type CommandTransport } from './net/transport';
 import { WorldView } from './render/view';
+import { MarketScene } from './render/scenes/MarketScene';
+import { FirstQuests, type Stage } from './quests/firstQuests';
+import { PricingPanel } from './ui/pricing';
 import { Bubbles } from './ui/bubbles';
 import { createControls, type Controls } from './ui/controls';
 import { createDebugOverlay } from './ui/debugOverlay';
 import { DialogueBox } from './ui/dialogue';
 import { Hud } from './ui/hud';
-import { Menu, loadSettings, saveSettings, type QuestView, type Settings } from './ui/menu';
+import { SCRIPTS as SCRIPTS_REF } from './content/dialogue';
+import { Menu, loadSettings, saveSettings, type Settings } from './ui/menu';
 
 const MAX_STEPS_PER_FRAME = 8;
 
-export type Mode = 'explore' | 'dialogue' | 'menu';
+export type Mode = 'explore' | 'dialogue' | 'menu' | 'scene';
 
 /**
  * Wires the layers together:
@@ -40,8 +43,11 @@ export class Game {
   private accumulator = 0;
   private lastTime = 0;
   private lastInteractionTick = -1;
-  /** Villagers met so far (the first objective). */
-  readonly met = new Set<string>();
+  readonly quests = new FirstQuests();
+  private pricing = new PricingPanel();
+  private market: MarketScene | null = null;
+  /** True while the market crowd is acting out a morning (for tests). */
+  marketPlaying = false;
   frames = 0;
 
   constructor(container: HTMLElement) {
@@ -74,6 +80,9 @@ export class Game {
       if (npc) this.bubbles.show(npcId, '…', () => ({ x: npc.x, y: heightAt(npc.x, npc.z) + 2.05, z: npc.z }));
     };
 
+    // ?quest=<stage> jumps ahead (testing and debugging).
+    const stage = params.get('quest') as Stage | null;
+    if (stage && ['meet', 'return', 'market', 'debrief', 'done'].includes(stage)) this.quests.skipTo(stage);
     this.updateObjective();
     setTimeout(() => this.hud.banner('The Valley of', 'Sunmeadow'), 600);
   }
@@ -89,7 +98,7 @@ export class Game {
   }
 
   get objectiveText() {
-    return this.objective().text;
+    return this.quests.objective().text;
   }
 
   private openMenu(tab?: 'journal' | 'codex' | 'settings') {
@@ -106,44 +115,116 @@ export class Game {
     this.fps.setVisible(s.showFps);
   }
 
-  private startConversation(npcId: string) {
+  get met() {
+    return this.quests.met;
+  }
+
+  private startConversation(npcId: string, then?: () => void) {
     const npc = NPCS.find((n) => n.id === npcId);
     if (!npc) return;
-    const script = npcId === 'keeper' && this.met.has('keeper') && this.met.size >= NPCS.length ? SCRIPTS.keeperReturn : SCRIPTS[npcId];
-    if (!script) return;
-    this.mode = 'dialogue';
+    const { script, after } = this.quests.conversation(npcId);
+    const inScene = this.mode === 'scene';
+    this.mode = inScene ? 'scene' : 'dialogue';
     const me = this.sim.state.players[this.localPlayer];
-    const a = { x: me.position.x, y: heightAt(me.position.x, me.position.z), z: me.position.z };
-    const b = { x: npc.x, y: heightAt(npc.x, npc.z), z: npc.z };
-    this.view.faceTarget = { x: npc.x, z: npc.z };
-    this.view.startConversation(a, b);
+    if (!inScene) {
+      const a = { x: me.position.x, y: heightAt(me.position.x, me.position.z), z: me.position.z };
+      const b = { x: npc.x, y: heightAt(npc.x, npc.z), z: npc.z };
+      this.view.faceTarget = { x: npc.x, z: npc.z };
+      this.view.startConversation(a, b);
+    }
     this.dialogue.open(script, () => {
-      this.mode = 'explore';
-      this.view.faceTarget = null;
-      this.view.endConversation();
-      this.met.add(npcId);
+      if (!inScene) {
+        this.mode = 'explore';
+        this.view.faceTarget = null;
+        this.view.endConversation();
+      }
+      const banner = this.quests.talked(npcId, after);
       this.updateObjective();
+      if (banner) this.hud.banner(banner.sub, banner.title);
+      if (after === 'startMarket') this.startMarket();
+      then?.();
     });
   }
 
-  private objective() {
-    const total = NPCS.length;
-    if (this.met.size < total) return { title: 'First Steps', text: `Meet the people of Sunmeadow (${this.met.size}/${total})` };
-    return { title: 'First Steps', text: 'Return to Keeper Aldous at the Ledger Spire' };
+  /** Mira's market mornings: crowd, price panel, results. */
+  private startMarket() {
+    this.mode = 'scene';
+    const scene = new MarketScene(this.view.atmosphere, this.quests.limits, this.quests.seeds, {
+      bubble: (i, text) => this.bubbles.show(`shopper-${i}`, text, () => scene.head(i), 1.4),
+    });
+    this.market = scene;
+    this.view.scene.add(scene.group);
+    // Stand the player beside the counter, watching the crowd.
+    const spot = { x: scene.stall.x + scene.front.x * 1.9 + scene.side.x * 2.1, z: scene.stall.z + scene.front.z * 1.9 + scene.side.z * 2.1 };
+    const c = scene.centre;
+    this.transport.send({ type: 'place', playerId: this.localPlayer, x: spot.x, z: spot.z, heading: Math.atan2(c.x - spot.x, -(c.z - spot.z)) });
+    this.view.faceTarget = { x: c.x, z: c.z };
+    const shot = scene.cameraShot(this.view.portrait);
+    this.view.startShot(shot.pos, shot.look);
+    this.marketRound();
+  }
+
+  private marketRound() {
+    const scene = this.market!;
+    scene.reset();
+    this.pricing.open(
+      this.quests.round,
+      (p) => scene.setPrice(p),
+      (p) => {
+        const res = this.quests.play(p);
+        this.pricing.close();
+        this.marketPlaying = true;
+        scene.play(res, () => {
+          this.marketPlaying = false;
+          this.pricing.open(this.quests.round, () => {}, () => {});
+          if (res.cleared) {
+            this.pricing.showResult(res, this.quests.reaction(res), { label: 'Continue', action: () => this.marketCleared() });
+          } else {
+            this.pricing.showResult(res, this.quests.reaction(res), {
+              label: 'Try another price',
+              action: () => this.marketRound(),
+            });
+          }
+        });
+      },
+    );
+  }
+
+  private marketCleared() {
+    this.pricing.close();
+    const next = this.quests.advanceMarket();
+    this.updateObjective();
+    const script = next === 'storm' ? 'merchantStorm' : 'merchantDone';
+    this.dialogue.open(SCRIPTS_REF[script], () => {
+      if (next === 'storm') {
+        this.marketRound();
+      } else {
+        this.endMarket();
+      }
+    });
+  }
+
+  private endMarket() {
+    this.market?.dispose();
+    this.market = null;
+    this.mode = 'explore';
+    this.view.faceTarget = null;
+    this.view.endConversation();
+    this.updateObjective();
   }
 
   private updateObjective() {
-    this.hud.setObjective(this.objective());
-    const q: QuestView = {
-      title: 'First Steps',
-      description: 'You have arrived in the valley of Sunmeadow. Get to know the people who live here.',
-      steps: [
-        { text: 'Talk to Mira at the market stall', done: this.met.has('merchant') },
-        { text: 'Talk to Keeper Aldous by the Ledger Spire', done: this.met.has('keeper') },
-      ],
-    };
-    if (this.met.size >= NPCS.length) q.steps.push({ text: 'Return to Keeper Aldous', done: false });
-    this.menu.setQuest(q);
+    this.hud.setObjective(this.quests.objective());
+    this.menu.setQuest(this.quests.journal());
+    this.menu.setCodex(this.quests.codex());
+  }
+
+  get stage() {
+    return this.quests.stage;
+  }
+
+  get pricingOpen() {
+    return this.pricing.isOpen;
   }
 
   private frame(timeMs: number) {
@@ -156,7 +237,7 @@ export class Game {
     if (exploring) this.view.rig.input(cam.dx, cam.dy, cam.zoom, this.view.renderer.domElement.clientHeight);
     this.view.cameraIdle = performance.now() / 1000 - this.input.lastCameraInput;
     this.view.rig.autoFollow = this.input.touchMode;
-    if (this.mode === 'dialogue') {
+    if (this.mode === 'dialogue' || (this.mode === 'scene' && this.dialogue.isOpen)) {
       // Space / E / Enter continue the conversation instead of starting a new one.
       if (this.input.takeInteract()) this.dialogue.advance();
     }
@@ -179,9 +260,13 @@ export class Game {
       if (this.mode === 'explore') this.startConversation(it.targetId);
     }
 
-    this.view.setConversationCover(this.dialogue.coverFraction);
+    this.view.setConversationCover(Math.max(this.dialogue.coverFraction, this.pricing.coverFraction));
     this.view.render(this.prev, this.sim.state, this.accumulator / TICK_DT, this.localPlayer, dt);
     this.dialogue.update(dt);
+    if (this.market) {
+      this.market.update(dt, performance.now() / 1000);
+      this.pricing.updateTags(this.view.project, (i) => this.market!.head(i));
+    }
     this.hud.setVisible(exploring);
     this.controls.update(this.input, this.actionTarget ? { label: 'Talk' } : null, exploring);
     this.bubbles.update(this.view.project);

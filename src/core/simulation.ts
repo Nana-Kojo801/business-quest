@@ -49,6 +49,15 @@ function applyCommand(world: WorldState, cmd: Command) {
     case 'leave':
       delete world.players[cmd.playerId];
       break;
+    case 'place': {
+      const p = world.players[cmd.playerId];
+      if (!p || ![cmd.x, cmd.z, cmd.heading].every(Number.isFinite)) break;
+      p.position = { x: cmd.x, z: cmd.z };
+      p.heading = wrapAngle(cmd.heading);
+      p.speed = 0;
+      p.intent = { x: 0, z: 0 };
+      break;
+    }
     case 'interact': {
       const p = world.players[cmd.playerId];
       if (!p) break;

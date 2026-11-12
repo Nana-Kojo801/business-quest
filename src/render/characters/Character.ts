@@ -257,6 +257,9 @@ export class Character {
     cowlick: new Spring(160, 6),
   };
   private waveStart = -Infinity;
+  /** Hold one hand up (e.g. a shopper who wants to buy). Eased in and out. */
+  raised = false;
+  private raiseAmt = 0;
   /** A friendly wave (with a little nod), e.g. when someone talks to this character. */
   wave() {
     this.waveStart = performance.now() / 1000;
@@ -606,6 +609,16 @@ export class Character {
       arm.fore.rotation.z = Math.sin(wt * 11) * 0.45 * g;
     } else {
       this.arms[1].fore.rotation.z = 0;
+    }
+    // Raised hand: eased so it reads as a reaction, not a snap.
+    this.raiseAmt += ((this.raised ? 1 : 0) - this.raiseAmt) * Math.min(1, dt * 7);
+    if (this.raiseAmt > 0.001 && !(wt >= 0 && wt < 1.8)) {
+      const g = this.raiseAmt;
+      const arm = this.arms[1];
+      arm.upper.rotation.z = THREE.MathUtils.lerp(arm.upper.rotation.z, 2.75, g);
+      arm.upper.rotation.x = THREE.MathUtils.lerp(arm.upper.rotation.x, -0.15, g);
+      arm.fore.rotation.x = THREE.MathUtils.lerp(arm.fore.rotation.x, -0.15, g);
+      arm.fore.rotation.z = Math.sin(time * 6 + this.seed) * 0.12 * g;
     }
     const nod = wt >= 0 && wt < 0.7 ? Math.sin((wt / 0.7) * Math.PI) * 0.18 : 0;
 
