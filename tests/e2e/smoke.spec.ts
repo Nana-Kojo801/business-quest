@@ -122,3 +122,37 @@ test('picks a starting tier by device and shows the debug overlay', async ({ pag
   expect(d.quality.tier).toBe(info.project.name === 'phone-portrait' ? 'medium' : 'high');
   await expect(page.getByTestId('debug-overlay')).toContainText('fps');
 });
+
+test.describe('sky', () => {
+  test.use({ viewport: { width: 270, height: 480 }, deviceScaleFactor: 1 });
+
+  for (const sky of ['goldenHour', 'day', 'dusk']) {
+    test(`${sky} sky renders a gradient above the horizon`, async ({ page }, info) => {
+      test.skip(info.project.name !== 'phone-portrait', 'sky rendering is device-independent');
+      test.setTimeout(60_000);
+      const errors = await load(page, `?quality=low&adaptive=0&sky=${sky}`, 3);
+      const png = await page.locator('#app canvas').screenshot();
+      // Average colour of a strip near the top of the screen and one just above the horizon.
+      const [top, low] = await page.evaluate(async (b64) => {
+        const img = new Image();
+        img.src = `data:image/png;base64,${b64}`;
+        await img.decode();
+        const c = document.createElement('canvas');
+        c.width = img.width; c.height = img.height;
+        const ctx = c.getContext('2d')!;
+        ctx.drawImage(img, 0, 0);
+        const avg = (y0: number, y1: number) => {
+          const d = ctx.getImageData(0, Math.floor(img.height * y0), img.width, Math.floor(img.height * (y1 - y0))).data;
+          const s = [0, 0, 0];
+          for (let i = 0; i < d.length; i += 4) { s[0] += d[i]; s[1] += d[i + 1]; s[2] += d[i + 2]; }
+          return s.map((v) => v / (d.length / 4));
+        };
+        return [avg(0.0, 0.06), avg(0.28, 0.33)];
+      }, png.toString('base64'));
+      // The sky is not one flat colour: the top and the horizon band clearly differ.
+      const diff = Math.abs(top[0] - low[0]) + Math.abs(top[1] - low[1]) + Math.abs(top[2] - low[2]);
+      expect(diff).toBeGreaterThan(25);
+      expect(errors).toEqual([]);
+    });
+  }
+});

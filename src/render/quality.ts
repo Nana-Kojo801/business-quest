@@ -26,12 +26,14 @@ export interface TierSettings {
   bloomLevels: number;
   /** MSAA samples for the scene render. */
   multisampling: number;
+  /** Sun shadow map resolution; 0 turns shadows off. */
+  shadowMapSize: number;
 }
 
 export const TIER_SETTINGS: Record<Tier, TierSettings> = {
-  low: { maxPixelRatio: 1, minScale: 0.6, painterlyRadius: 0, bloomLevels: 4, multisampling: 0 },
-  medium: { maxPixelRatio: 1.5, minScale: 0.7, painterlyRadius: 2, bloomLevels: 6, multisampling: 0 },
-  high: { maxPixelRatio: 2, minScale: 0.8, painterlyRadius: 3, bloomLevels: 8, multisampling: 4 },
+  low: { maxPixelRatio: 1, minScale: 0.6, painterlyRadius: 0, bloomLevels: 4, multisampling: 0, shadowMapSize: 0 },
+  medium: { maxPixelRatio: 1.5, minScale: 0.7, painterlyRadius: 2, bloomLevels: 6, multisampling: 0, shadowMapSize: 1024 },
+  high: { maxPixelRatio: 2, minScale: 0.8, painterlyRadius: 3, bloomLevels: 8, multisampling: 4, shadowMapSize: 2048 },
 };
 
 const TARGET_FRAME_MS = 1000 / 55; // aim for ~55+ fps
