@@ -59,7 +59,9 @@ async function distinctColours(page: Page) {
 }
 
 test('loads and renders a non-blank frame without errors', async ({ page }) => {
-  test.setTimeout(60_000);
+  // The first test in each project pays for compiling every shader on CI's CPU renderer; if it
+  // runs out of time mid-way, the shared browser is left broken for the tests after it.
+  test.setTimeout(120_000);
   const errors = await load(page);
   const canvas = page.locator('#app canvas');
   await expect(canvas).toBeVisible();
