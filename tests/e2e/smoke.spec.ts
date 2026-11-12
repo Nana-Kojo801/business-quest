@@ -19,9 +19,25 @@ async function load(page: Page, query = '?quality=low&adaptive=0', minFrames = 1
   return errors;
 }
 
+/**
+ * Run pixel analysis on a screenshot in a fresh, idle page. The game page's main
+ * thread is busy rendering (slowly, on CI's CPU renderer), so work queued there can
+ * time out; a separate browser context runs in its own process.
+ */
+async function inIdlePage<T>(page: Page, fn: (b64: string) => Promise<T>, arg: string): Promise<T> {
+  const browser = page.context().browser()!;
+  const ctx = await browser.newContext();
+  try {
+    const idle = await ctx.newPage();
+    return await idle.evaluate(fn, arg);
+  } finally {
+    await ctx.close();
+  }
+}
+
 async function distinctColours(page: Page) {
   const png = await page.locator('#app canvas').screenshot();
-  return page.evaluate(async (b64) => {
+  return inIdlePage(page, async (b64: string) => {
     const img = new Image();
     img.src = `data:image/png;base64,${b64}`;
     await img.decode();
@@ -134,7 +150,7 @@ test.describe('sky', () => {
       const errors = await load(page, `?quality=low&adaptive=0&sky=${sky}`, 3);
       const png = await page.locator('#app canvas').screenshot();
       // Average colour of a strip near the top of the screen and one just above the horizon.
-      const [top, low] = await page.evaluate(async (b64) => {
+      const [top, low] = await inIdlePage(page, async (b64: string) => {
         const img = new Image();
         img.src = `data:image/png;base64,${b64}`;
         await img.decode();
@@ -169,7 +185,7 @@ test('walking toward the lake shows water', async ({ page }, info) => {
   await page.keyboard.up('KeyW');
   const png = await page.locator('#app canvas').screenshot();
   // Count clearly blue pixels (water) in the left half of the screen.
-  const blueShare = await page.evaluate(async (b64) => {
+  const blueShare = await inIdlePage(page, async (b64: string) => {
     const img = new Image();
     img.src = `data:image/png;base64,${b64}`;
     await img.decode();
