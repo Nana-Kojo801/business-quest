@@ -6,6 +6,9 @@ import { createField } from './flora/Field';
 import { createRocks } from './flora/Rocks';
 import { createTrees } from './flora/Trees';
 import { createBuildings } from './structures/Buildings';
+import { createParticles } from './ambient/Particles';
+import { createLightShafts } from './ambient/LightShafts';
+import { createBirds } from './ambient/Birds';
 import { bakeGroundData, type GroundData } from './terrain/groundData';
 import { Pipeline } from './pipeline';
 import { QualityManager, initialTier } from './quality';
@@ -37,6 +40,9 @@ export class WorldView {
   private fields: ReturnType<typeof createField>[] = [];
   private trees: ReturnType<typeof createTrees> | null = null;
   private rocks: ReturnType<typeof createRocks> | null = null;
+  private particles: ReturnType<typeof createParticles> | null = null;
+  private shafts: ReturnType<typeof createLightShafts> | null = null;
+  private birds: ReturnType<typeof createBirds>;
 
   constructor(private container: HTMLElement) {
     // Antialiasing, tone mapping and colour output are handled by the post-processing pipeline.
@@ -75,6 +81,8 @@ export class WorldView {
     this.scene.add(this.water.mesh);
     this.buildings = createBuildings(this.atmosphere);
     this.scene.add(this.buildings.group);
+    this.birds = createBirds(this.atmosphere);
+    this.scene.add(this.birds.mesh);
     this.buildPlaceholderWorld();
     this.buildFields();
     window.addEventListener('resize', () => this.resize());
@@ -88,16 +96,6 @@ export class WorldView {
     const terrain = createTerrain();
     world.add(terrain);
 
-    // Placeholder glowing crystals (stand-ins until real props arrive).
-    const crystalMat = new THREE.MeshStandardMaterial({ color: '#9fe8ff', emissive: '#5cd6ff', emissiveIntensity: 4 });
-    const crystalGeo = new THREE.OctahedronGeometry(0.35);
-    const spots: [number, number][] = [[-4, -6], [9, -1], [-10, -4], [4, -14], [-6, -24], [18, -12], [9, -28], [-20, -8]];
-    for (const [x, z] of spots) {
-      const m = new THREE.Mesh(crystalGeo, crystalMat);
-      m.position.set(x, heightAt(x, z) + 0.9, z);
-      m.scale.y = 1.8;
-      world.add(m);
-    }
 
     this.scene.add(world);
     this.atmosphere.adopt(world);
@@ -119,6 +117,14 @@ export class WorldView {
       this.scene.remove(this.rocks.group);
       this.rocks.dispose();
     }
+    if (this.particles) {
+      this.scene.remove(this.particles.group);
+      this.particles.dispose();
+    }
+    if (this.shafts) {
+      this.scene.remove(this.shafts.mesh);
+      this.shafts.dispose();
+    }
     const tier = this.quality.settings;
     this.fields = [
       createField('grass', tier.grass, this.atmosphere, this.ground),
@@ -128,6 +134,9 @@ export class WorldView {
     this.trees = createTrees(this.atmosphere, { farCount: tier.farTrees });
     this.rocks = createRocks(this.atmosphere, tier.pebbles);
     this.scene.add(this.trees.group, this.rocks.group);
+    this.particles = createParticles(this.atmosphere, this.ground, tier.particles, () => this.renderer.getPixelRatio());
+    this.shafts = createLightShafts(this.atmosphere, tier.lightShafts);
+    this.scene.add(this.particles.group, this.shafts.mesh);
   }
 
   resize() {
@@ -195,6 +204,9 @@ export class WorldView {
     for (const f of this.fields) f.update(this.focus, time);
     this.trees?.update(time, this.camera, this.focus);
     this.buildings.update(time, this.focus);
+    this.particles?.update(time, this.focus);
+    this.shafts?.update(time, this.camera);
+    this.birds.update(time);
     this.pipeline.render(dt);
   }
 }

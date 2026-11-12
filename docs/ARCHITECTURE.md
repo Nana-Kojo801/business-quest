@@ -104,3 +104,12 @@ path), the market stall at the fork, the signpost and lanterns along the main pa
 movement. `src/render/structures/Buildings.ts` builds each one from simple shapes, merged into
 one painted mesh plus one glowing mesh per structure; glowing parts use colours above 1.0 so
 the bloom picks them up. Buildings dissolve when they come between the camera and the player.
+
+## Atmosphere and ambient motion
+
+`src/render/ambient/`: GPU point clouds for drifting motes (sparkle when backlit), fireflies
+(strength follows the sky preset: none by day, faint at golden hour, bright at dusk) and petals
+falling from blossom trees; light shafts as camera-facing strips on an artistic, mostly upright
+axis leaning toward the sun (an exactly sun-aligned beam collapses on screen when the sun is
+ahead); and a small flock of birds with wing flaps in the vertex shader. Counts are part of the
+quality tier (`particles`, `lightShafts`).

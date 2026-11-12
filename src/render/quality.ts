@@ -35,12 +35,15 @@ export interface TierSettings {
   /** Simple trees on the distant mountain slopes, and decorative small stones. */
   farTrees: number;
   pebbles: number;
+  /** Drifting motes, fireflies, petals per blossom tree, and light shafts. */
+  particles: { motes: number; fireflies: number; petalsPerTree: number };
+  lightShafts: number;
 }
 
 export const TIER_SETTINGS: Record<Tier, TierSettings> = {
-  low: { maxPixelRatio: 1, minScale: 0.6, painterlyRadius: 0, bloomLevels: 4, multisampling: 0, shadowMapSize: 0, grass: { count: 2400, radius: 11 }, flowers: { count: 260, radius: 11 }, farTrees: 200, pebbles: 30 },
-  medium: { maxPixelRatio: 1.75, minScale: 0.6, painterlyRadius: 1, bloomLevels: 6, multisampling: 0, shadowMapSize: 1024, grass: { count: 6000, radius: 16 }, flowers: { count: 700, radius: 16 }, farTrees: 450, pebbles: 70 },
-  high: { maxPixelRatio: 2, minScale: 0.9, painterlyRadius: 2, bloomLevels: 8, multisampling: 4, shadowMapSize: 2048, grass: { count: 10000, radius: 20 }, flowers: { count: 1200, radius: 20 }, farTrees: 800, pebbles: 110 },
+  low: { maxPixelRatio: 1, minScale: 0.6, painterlyRadius: 0, bloomLevels: 4, multisampling: 0, shadowMapSize: 0, grass: { count: 2400, radius: 11 }, flowers: { count: 260, radius: 11 }, farTrees: 200, pebbles: 30, particles: { motes: 120, fireflies: 30, petalsPerTree: 4 }, lightShafts: 4 },
+  medium: { maxPixelRatio: 1.75, minScale: 0.6, painterlyRadius: 1, bloomLevels: 6, multisampling: 0, shadowMapSize: 1024, grass: { count: 6000, radius: 16 }, flowers: { count: 700, radius: 16 }, farTrees: 450, pebbles: 70, particles: { motes: 350, fireflies: 60, petalsPerTree: 6 }, lightShafts: 8 },
+  high: { maxPixelRatio: 2, minScale: 0.9, painterlyRadius: 2, bloomLevels: 8, multisampling: 4, shadowMapSize: 2048, grass: { count: 10000, radius: 20 }, flowers: { count: 1200, radius: 20 }, farTrees: 800, pebbles: 110, particles: { motes: 600, fireflies: 90, petalsPerTree: 9 }, lightShafts: 10 },
 };
 
 const TARGET_FRAME_MS = 1000 / 55; // aim for ~55+ fps
