@@ -64,11 +64,10 @@ test('keyboard moves the player', async ({ page }, info) => {
   test.skip(info.project.name !== 'desktop');
   await load(page);
   const before = await readDebug(page);
+  // Hold the key until the player has moved. No fixed wait: CI renders on a slow CPU.
   await page.keyboard.down('KeyW');
-  await page.waitForTimeout(400);
+  await expect.poll(async () => (await readDebug(page)).player.z, { timeout: 20_000 }).toBeLessThan(before.player.z - 0.3);
   await page.keyboard.up('KeyW');
-  const after = await readDebug(page);
-  expect(after.player.z).toBeLessThan(before.player.z - 0.3);
 });
 
 test('touch drag moves the player', async ({ page }, info) => {
@@ -78,22 +77,17 @@ test('touch drag moves the player', async ({ page }, info) => {
   const before = await readDebug(page);
   const x = vp.width / 2;
   const y = vp.height * 0.8;
-  // Dispatch pointer events as a touch pointer would (drag to the right).
-  await page.evaluate(({ x, y }) => {
-    const el = document.querySelector('#app canvas')!;
-    const ev = (type: string, cx: number) =>
-      el.dispatchEvent(new PointerEvent(type, { pointerId: 7, pointerType: 'touch', clientX: cx, clientY: y, bubbles: true, isPrimary: true }));
-    ev('pointerdown', x);
-    ev('pointermove', x + 80);
-  }, { x, y });
-  await page.waitForTimeout(400);
-  await page.evaluate(({ x, y }) => {
-    document.querySelector('#app canvas')!.dispatchEvent(
-      new PointerEvent('pointerup', { pointerId: 7, pointerType: 'touch', clientX: x + 80, clientY: y, bubbles: true }),
-    );
-  }, { x, y });
-  const after = await readDebug(page);
-  expect(after.player.x).toBeGreaterThan(before.player.x + 0.3);
+  const touch = (type: string, cx: number) =>
+    page.evaluate(({ type, cx, y }) => {
+      document.querySelector('#app canvas')!.dispatchEvent(
+        new PointerEvent(type, { pointerId: 7, pointerType: 'touch', clientX: cx, clientY: y, bubbles: true, isPrimary: true }),
+      );
+    }, { type, cx, y });
+  // Drag to the right and hold until the player has moved.
+  await touch('pointerdown', x);
+  await touch('pointermove', x + 80);
+  await expect.poll(async () => (await readDebug(page)).player.x, { timeout: 20_000 }).toBeGreaterThan(before.player.x + 0.3);
+  await touch('pointerup', x + 80);
 });
 
 test.describe('quality tiers', () => {

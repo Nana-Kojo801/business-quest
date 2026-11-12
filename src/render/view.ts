@@ -22,7 +22,6 @@ export class WorldView {
   private players = new Map<PlayerId, THREE.Object3D>();
   private playerGeo = new THREE.SphereGeometry(0.5, 32, 16);
   private playerMat = new THREE.MeshStandardMaterial({ color: '#ffc46b', emissive: '#ff8a3d', emissiveIntensity: 1.6 });
-  private clock = new THREE.Clock();
   private focus = new THREE.Vector3();
 
   constructor(private container: HTMLElement) {
@@ -148,7 +147,7 @@ export class WorldView {
       this.focus.copy(t);
     }
 
-    this.atmosphere.update(this.clock.getElapsedTime(), this.camera, this.focus);
+    this.atmosphere.update(performance.now() / 1000, this.camera, this.focus);
     this.pipeline.render(dt);
   }
 }
