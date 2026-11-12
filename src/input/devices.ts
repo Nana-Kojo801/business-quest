@@ -1,6 +1,6 @@
 /**
- * Minimal input: keyboard (WASD / arrows) and touch/mouse drag.
- * Produces a normalized move vector. Replaced by the full control scheme in a later issue.
+ * Device input: keyboard (WASD / arrows) and touch/mouse drag.
+ * Produces a normalized, screen-relative move vector. Knows nothing about game state.
  */
 export interface MoveInput {
   x: number; // -1..1, right is positive

@@ -1,0 +1,10 @@
+{
+  // Type-checks the game-state core with no DOM and no three.js available,
+  // so any accidental dependency on the browser or renderer fails the build.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "types": []
+  },
+  "include": ["src/core"]
+}
