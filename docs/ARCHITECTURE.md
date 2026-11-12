@@ -130,3 +130,18 @@ quality tier (`particles`, `lightShafts`).
 Appearances live in `looks.ts`. Villagers are placed in `src/core/npcs.ts` (they block
 movement), turn to face a nearby player, and glance around otherwise. `?cam=close` is a debug
 close-up camera for judging characters.
+
+## Controls and camera
+
+- `src/input/devices.ts`: keyboard (WASD/arrows, Shift to walk, E/Space to interact), mouse
+  (drag to orbit, wheel to zoom) and touch (floating joystick in the lower-left area; drag
+  elsewhere to orbit; pinch to zoom). All pointer input lands on the `#controls` surface.
+- `src/ui/controls.ts`: joystick visuals, the context action button (bottom-right, thumb reach,
+  safe-area aware) and the desktop key prompt. `src/ui/bubbles.ts`: speech bubbles over heads.
+- `src/render/CameraRig.ts`: eased orbit camera. Portrait keeps the player low in a closer frame;
+  landscape sits further back and lower. Gentle auto-follow on touch only. Never dips below the
+  ground or looks through hills.
+- Interaction goes through the core: `interact` command + `interactTarget()` (nearest villager in
+  reach, preferring ones in front); the result is stored on the player state, so the UI prompt,
+  the simulation and future multiplayer agree.
+- Debug: `?spawn=x,z` starts the player elsewhere.

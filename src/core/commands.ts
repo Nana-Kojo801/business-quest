@@ -8,4 +8,6 @@ import type { PlayerId } from './types';
 export type Command =
   | { type: 'join'; playerId: PlayerId; x: number; z: number }
   | { type: 'leave'; playerId: PlayerId }
-  | { type: 'move'; playerId: PlayerId; x: number; z: number };
+  | { type: 'move'; playerId: PlayerId; x: number; z: number }
+  /** Talk to / use whatever is in reach (see interactTarget). */
+  | { type: 'interact'; playerId: PlayerId };

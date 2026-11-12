@@ -61,3 +61,22 @@ describe('villagers', () => {
     expect(isWalkable(fx, fz)).toBe(true);
   });
 });
+
+describe('interaction', () => {
+  it('a player in reach of a villager can talk to them; out of reach, nothing happens', async () => {
+    const { NPCS, Simulation, interactTarget } = await import('../../src/core');
+    const k = NPCS.find((n) => n.id === 'keeper')!;
+    const sim = new Simulation();
+    // Stand 1.4 m in front of the keeper.
+    sim.enqueue({ type: 'join', playerId: 'a', x: k.x + Math.sin(k.rot) * 1.4, z: k.z + Math.cos(k.rot) * 1.4 });
+    sim.enqueue({ type: 'join', playerId: 'b', x: 0, z: 0 });
+    sim.step();
+    expect(interactTarget(sim.state.players.a)).toBe('keeper');
+    expect(interactTarget(sim.state.players.b)).toBeNull();
+    sim.enqueue({ type: 'interact', playerId: 'a' });
+    sim.enqueue({ type: 'interact', playerId: 'b' });
+    sim.step();
+    expect(sim.state.players.a.interaction).toEqual({ targetId: 'keeper', tick: 1 });
+    expect(sim.state.players.b.interaction).toBeNull();
+  });
+});

@@ -256,6 +256,11 @@ export class Character {
     hairZ: new Spring(70, 8),
     cowlick: new Spring(160, 6),
   };
+  private waveStart = -Infinity;
+  /** A friendly wave (with a little nod), e.g. when someone talks to this character. */
+  wave() {
+    this.waveStart = performance.now() / 1000;
+  }
   /** Head turn toward something (radians); null lets the character glance around on its own. */
   lookTarget: number | null = null;
 
@@ -590,12 +595,26 @@ export class Character {
       a.fore.rotation.x = -(0.22 + 0.35 * w + 0.8 * run) - Math.max(0, -s) * 0.45 * w;
     });
 
+    // Wave: one arm rises and waves, blended in and out over ~1.8 s.
+    const wt = time - this.waveStart;
+    if (wt >= 0 && wt < 1.8) {
+      const g = THREE.MathUtils.smoothstep(wt, 0, 0.25) * (1 - THREE.MathUtils.smoothstep(wt, 1.45, 1.8));
+      const arm = this.arms[1];
+      arm.upper.rotation.z = THREE.MathUtils.lerp(arm.upper.rotation.z, 2.5, g);
+      arm.upper.rotation.x = THREE.MathUtils.lerp(arm.upper.rotation.x, -0.25, g);
+      arm.fore.rotation.x = THREE.MathUtils.lerp(arm.fore.rotation.x, -0.35, g);
+      arm.fore.rotation.z = Math.sin(wt * 11) * 0.45 * g;
+    } else {
+      this.arms[1].fore.rotation.z = 0;
+    }
+    const nod = wt >= 0 && wt < 0.7 ? Math.sin((wt / 0.7) * Math.PI) * 0.18 : 0;
+
     // Head: steadied against the body, leads into turns, glances around when idle.
     const wander = Math.sin(time * 0.31 + this.seed) * 0.45 + Math.sin(time * 0.83 + this.seed * 2) * 0.15;
     const target = this.lookTarget ?? wander * idle;
     this.lookYaw += (target - this.lookYaw) * Math.min(1, dt * 3.5);
     this.head.rotation.y = this.lookYaw - (this.torso.rotation.y + this.hips.rotation.y) * 0.85 + this.yawRate * 0.07 * w;
-    this.head.rotation.x = -this.torso.rotation.x * 0.7 + Math.sin(time * 0.5 + this.seed) * 0.04 * idle;
+    this.head.rotation.x = -this.torso.rotation.x * 0.7 + Math.sin(time * 0.5 + this.seed) * 0.04 * idle + nod;
     this.head.rotation.z = -this.torso.rotation.z * 0.6 - this.hips.rotation.z * 0.5 + Math.sin(time * 0.37 + this.seed) * 0.04 * idle;
 
     // Secondary motion: springs chase targets set by speed, acceleration, bounce and turning.

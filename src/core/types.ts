@@ -22,6 +22,8 @@ export interface PlayerState {
   speed: number;
   /** Latest movement intent, -1..1 on each axis, relative to the world. */
   intent: Vec2;
+  /** The most recent interaction this player started (with whom, on which tick), if any. */
+  interaction: { targetId: string; tick: number } | null;
 }
 
 export interface WorldState {

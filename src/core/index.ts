@@ -6,3 +6,4 @@ export * from './structures';
 export * from './flora';
 export * from './npcs';
 export * from './collision';
+export * from './interact';

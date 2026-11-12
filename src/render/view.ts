@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { NPCS, heightAt, type Npc, type PlayerId, type WorldState } from '../core';
 import { Character, updateCharacterLighting } from './characters/Character';
+import { CameraRig } from './CameraRig';
 import { LOOKS } from './characters/looks';
 import { createTerrain } from './terrain/Terrain';
 import { createWater } from './water/Water';
@@ -25,8 +26,27 @@ export class WorldView {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.PerspectiveCamera(50, 1, 0.1, 400);
+  readonly rig: CameraRig;
+  /** Seconds since the player last moved the camera by hand (set by the game each frame). */
+  cameraIdle = Infinity;
+  /** Called when a villager is talked to (for the speech bubble). */
+  onInteraction: (npcId: string) => void = () => {};
+  private seenInteraction = new Map<string, number>();
+  private projV = new THREE.Vector3();
+  /** World point to screen pixels (for DOM overlays such as speech bubbles). */
+  project = (p: { x: number; y: number; z: number }) => {
+    this.projV.set(p.x, p.y, p.z).project(this.camera);
+    const el = this.renderer.domElement;
+    return {
+      x: (this.projV.x * 0.5 + 0.5) * el.clientWidth,
+      y: (-this.projV.y * 0.5 + 0.5) * el.clientHeight,
+      visible: this.projV.z < 1,
+    };
+  };
   /** Camera yaw around the vertical axis; 0 looks toward -z. */
-  cameraYaw = 0;
+  get cameraYaw() {
+    return this.rig.yaw;
+  }
   readonly quality: QualityManager;
   readonly pipeline: Pipeline;
   readonly atmosphere: Atmosphere;
@@ -34,8 +54,7 @@ export class WorldView {
   private players = new Map<PlayerId, Character>();
   private npcs: { npc: Npc; character: Character; yaw: number }[] = [];
   private focus = new THREE.Vector3();
-  private cameraGround = 0;
-  private closeCam = new URLSearchParams(location.search).get('cam') === 'close';
+
   private water: ReturnType<typeof createWater>;
   private buildings: ReturnType<typeof createBuildings>;
   private ground: GroundData;
@@ -64,6 +83,7 @@ export class WorldView {
     const isTouch = matchMedia('(pointer: coarse)').matches;
     this.quality = new QualityManager(initialTier(params, isTouch), params.get('adaptive') !== '0');
 
+    this.rig = new CameraRig(this.camera, params.get('cam') === 'close');
     this.atmosphere = new Atmosphere(this.scene);
     this.atmosphere.setPreset(presetFromParams(params));
     this.atmosphere.setShadowMapSize(this.quality.settings.shadowMapSize);
@@ -224,21 +244,22 @@ export class WorldView {
     }
 
     const target = followId ? this.players.get(followId) : undefined;
-    if (target) {
-      const t = target.root.position;
-      const fx = Math.sin(this.cameraYaw);
-      const fz = -Math.cos(this.cameraYaw);
-      // Placeholder framing (refined with the camera work later): low enough to show the sky.
-      // ?cam=close is a debug close-up for judging characters.
-      const close = this.closeCam;
-      const back = close ? 3.2 : 9;
-      const ahead = close ? 0.4 : 4;
-      // Follow the ground height smoothly so small bumps don't jolt the camera.
-      const ground = t.y;
-      this.cameraGround += (ground - this.cameraGround) * Math.min(1, dt * 4);
-      this.camera.position.set(t.x - fx * back, this.cameraGround + (close ? 1.55 : 4.5), t.z - fz * back);
-      this.camera.lookAt(t.x + fx * ahead, this.cameraGround + (close ? 1.0 : 1.2), t.z + fz * ahead);
-      this.focus.copy(t);
+    const me2 = followId ? curr.players[followId] : undefined;
+    if (target && me2) {
+      this.rig.update(dt, target.root.position, me2.heading, THREE.MathUtils.clamp(me2.speed / 4.5, 0, 1), this.cameraIdle);
+      this.focus.copy(target.root.position);
+    }
+
+    // Villagers react when someone talks to them.
+    for (const pl of Object.values(curr.players)) {
+      const it = pl.interaction;
+      if (!it || this.seenInteraction.get(pl.id) === it.tick) continue;
+      this.seenInteraction.set(pl.id, it.tick);
+      const v = this.npcs.find((n) => n.npc.id === it.targetId);
+      if (v) {
+        v.character.wave();
+        this.onInteraction(it.targetId);
+      }
     }
 
     const time = performance.now() / 1000;

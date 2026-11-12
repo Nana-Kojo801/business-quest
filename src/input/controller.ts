@@ -15,7 +15,7 @@ export class LocalController {
     readonly playerId: PlayerId,
   ) {}
 
-  /** Call once per frame. Only sends a command when the intent changes. */
+  /** Call once per frame. Sends a move command only when the intent changes. */
   update(cameraYaw: number) {
     const m = this.input.read();
     // Screen "up" (m.y > 0) means away from the camera.
@@ -23,8 +23,10 @@ export class LocalController {
     const cos = Math.cos(cameraYaw);
     const x = m.x * cos + m.y * sin;
     const z = m.x * sin - m.y * cos;
-    if (Math.abs(x - this.last.x) < 1e-3 && Math.abs(z - this.last.z) < 1e-3) return;
-    this.last = { x, z };
-    this.transport.send({ type: 'move', playerId: this.playerId, x, z });
+    if (Math.abs(x - this.last.x) > 1e-3 || Math.abs(z - this.last.z) > 1e-3) {
+      this.last = { x, z };
+      this.transport.send({ type: 'move', playerId: this.playerId, x, z });
+    }
+    if (this.input.takeInteract()) this.transport.send({ type: 'interact', playerId: this.playerId });
   }
 }

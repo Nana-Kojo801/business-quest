@@ -1,6 +1,7 @@
 import type { Command } from './commands';
 import { boundaryNormal, isWalkable } from './collision';
 import { TERRAIN } from './terrain';
+import { interactTarget } from './interact';
 import type { PlayerState, WorldState } from './types';
 
 export const TICK_RATE = 60;
@@ -41,12 +42,20 @@ function applyCommand(world: WorldState, cmd: Command) {
           heading: 0,
           speed: 0,
           intent: { x: 0, z: 0 },
+          interaction: null,
         };
       }
       break;
     case 'leave':
       delete world.players[cmd.playerId];
       break;
+    case 'interact': {
+      const p = world.players[cmd.playerId];
+      if (!p) break;
+      const target = interactTarget(p);
+      if (target) p.interaction = { targetId: target, tick: world.tick };
+      break;
+    }
     case 'move': {
       const p = world.players[cmd.playerId];
       if (!p) break;

@@ -18,6 +18,9 @@ Object.defineProperty(window, '__bq', {
       player: { x: p.position.x, z: p.position.z },
       quality: quality(),
       passes: game.view.pipeline.activePasses,
+      camera: { yaw: game.view.rig.yaw, pitch: game.view.rig.pitch, distance: game.view.rig.distance },
+      actionTarget: game.actionTarget,
+      interaction: p.interaction,
     };
   },
 });

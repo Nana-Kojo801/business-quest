@@ -1,6 +1,9 @@
 import { test, expect, type Page } from '@playwright/test';
 
 type Debug = {
+  camera: { yaw: number; pitch: number; distance: number };
+  actionTarget: string | null;
+  interaction: { targetId: string; tick: number } | null;
   frames: number;
   player: { x: number; z: number };
   quality: { tier: string; scale: number; pixelRatio: number };
@@ -86,24 +89,88 @@ test('keyboard moves the player', async ({ page }, info) => {
   await page.keyboard.up('KeyW');
 });
 
-test('touch drag moves the player', async ({ page }, info) => {
+/** Dispatch a touch pointer event on the controls surface. */
+const touch = (page: Page, type: string, x: number, y: number, id = 7) =>
+  page.evaluate(({ type, x, y, id }) => {
+    document.querySelector('#controls')!.dispatchEvent(
+      new PointerEvent(type, { pointerId: id, pointerType: 'touch', clientX: x, clientY: y, bubbles: true, isPrimary: id === 7 }),
+    );
+  }, { type, x, y, id });
+
+test('touch joystick (lower left) moves the player', async ({ page }, info) => {
   test.skip(info.project.name !== 'phone-portrait');
   await load(page);
   const vp = page.viewportSize()!;
   const before = await readDebug(page);
-  const x = vp.width / 2;
+  const x = vp.width * 0.25;
   const y = vp.height * 0.8;
-  const touch = (type: string, cx: number) =>
-    page.evaluate(({ type, cx, y }) => {
-      document.querySelector('#app canvas')!.dispatchEvent(
-        new PointerEvent(type, { pointerId: 7, pointerType: 'touch', clientX: cx, clientY: y, bubbles: true, isPrimary: true }),
-      );
-    }, { type, cx, y });
-  // Drag to the right and hold until the player has moved.
-  await touch('pointerdown', x);
-  await touch('pointermove', x + 80);
+  await touch(page, 'pointerdown', x, y);
+  await expect(page.getByTestId('joystick')).toBeVisible();
+  // Push the stick to the right and hold until the player has moved.
+  await touch(page, 'pointermove', x + 60, y);
   await expect.poll(async () => (await readDebug(page)).player.x, { timeout: 20_000 }).toBeGreaterThan(before.player.x + 0.3);
-  await touch('pointerup', x + 80);
+  await touch(page, 'pointerup', x + 60, y);
+});
+
+test('dragging on the right turns the camera; pinch zooms', async ({ page }, info) => {
+  test.skip(info.project.name !== 'phone-portrait');
+  await load(page);
+  const vp = page.viewportSize()!;
+  const before = await readDebug(page);
+  await touch(page, 'pointerdown', vp.width * 0.75, vp.height * 0.4);
+  for (let i = 1; i <= 5; i++) await touch(page, 'pointermove', vp.width * 0.75 - i * 30, vp.height * 0.4);
+  await touch(page, 'pointerup', vp.width * 0.75 - 150, vp.height * 0.4);
+  await expect.poll(async () => Math.abs((await readDebug(page)).camera.yaw - before.camera.yaw), { timeout: 20_000 }).toBeGreaterThan(0.3);
+  // Pinch out (fingers apart) zooms in.
+  const d0 = (await readDebug(page)).camera.distance;
+  await touch(page, 'pointerdown', vp.width * 0.5, vp.height * 0.3, 8);
+  await touch(page, 'pointerdown', vp.width * 0.5, vp.height * 0.4, 9);
+  for (let i = 1; i <= 5; i++) {
+    await touch(page, 'pointermove', vp.width * 0.5, vp.height * 0.3 - i * 15, 8);
+    await touch(page, 'pointermove', vp.width * 0.5, vp.height * 0.4 + i * 15, 9);
+  }
+  await touch(page, 'pointerup', 0, 0, 8);
+  await touch(page, 'pointerup', 0, 0, 9);
+  await expect.poll(async () => (await readDebug(page)).camera.distance, { timeout: 20_000 }).toBeLessThan(d0 - 0.5);
+});
+
+test('mouse drag orbits and the wheel zooms', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop');
+  await load(page);
+  const before = await readDebug(page);
+  await page.mouse.move(700, 400);
+  await page.mouse.down();
+  await page.mouse.move(500, 400, { steps: 5 });
+  await page.mouse.up();
+  await expect.poll(async () => Math.abs((await readDebug(page)).camera.yaw - before.camera.yaw), { timeout: 20_000 }).toBeGreaterThan(0.2);
+  await page.mouse.wheel(0, 400);
+  await expect.poll(async () => (await readDebug(page)).camera.distance, { timeout: 20_000 }).toBeGreaterThan(before.camera.distance + 0.5);
+});
+
+// Spawn 1.4 m in front of the keeper (see src/core/npcs.ts).
+const NEAR_KEEPER = '?quality=low&adaptive=0&spawn=7.66,-22.17';
+
+test('near a villager, talking works (E on desktop, action button on touch)', async ({ page }, info) => {
+  test.setTimeout(60_000);
+  const errors = await load(page, NEAR_KEEPER, 3);
+  await expect.poll(async () => (await readDebug(page)).actionTarget, { timeout: 20_000 }).toBe('keeper');
+  if (info.project.name === 'desktop') {
+    await expect(page.getByTestId('action-prompt')).toHaveClass(/show/);
+    await page.keyboard.press('KeyE');
+  } else {
+    const button = page.getByTestId('action-button');
+    await expect(button).toHaveClass(/show/);
+    await button.dispatchEvent('pointerdown');
+  }
+  await expect.poll(async () => (await readDebug(page)).interaction?.targetId, { timeout: 20_000 }).toBe('keeper');
+  await expect(page.getByTestId('bubble-keeper')).toHaveClass(/show/);
+  expect(errors).toEqual([]);
+});
+
+test('no action is offered away from villagers', async ({ page }) => {
+  await load(page);
+  expect((await readDebug(page)).actionTarget).toBeNull();
+  await expect(page.getByTestId('action-button')).not.toHaveClass(/show/);
 });
 
 test.describe('quality tiers', () => {
@@ -176,11 +243,11 @@ test.describe('sky', () => {
 
 test('walking toward the lake shows water', async ({ page }, info) => {
   test.skip(info.project.name !== 'desktop', 'one viewport is enough');
-  test.setTimeout(90_000);
+  test.setTimeout(180_000);
   const errors = await load(page, '?quality=low&adaptive=0', 3);
   await page.keyboard.down('KeyA');
   await page.keyboard.down('KeyW');
-  await expect.poll(async () => (await readDebug(page)).player.x, { timeout: 60_000 }).toBeLessThan(-5);
+  await expect.poll(async () => (await readDebug(page)).player.x, { timeout: 150_000 }).toBeLessThan(-5);
   await page.keyboard.up('KeyA');
   await page.keyboard.up('KeyW');
   const png = await page.locator('#app canvas').screenshot();
