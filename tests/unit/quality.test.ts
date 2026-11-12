@@ -62,7 +62,7 @@ describe('quality', () => {
 
   it('caps pixel ratio per tier and applies scale', () => {
     const q = new QualityManager('medium', false);
-    expect(q.pixelRatio(3)).toBe(1.5);
+    expect(q.pixelRatio(3)).toBe(TIER_SETTINGS.medium.maxPixelRatio);
     expect(q.pixelRatio(1)).toBe(1);
   });
 });

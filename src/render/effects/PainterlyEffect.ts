@@ -64,7 +64,7 @@ void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor)
 `;
 
 export class PainterlyEffect extends Effect {
-  constructor({ radius = 2, strength = 1, sharpness = 40 } = {}) {
+  constructor({ radius = 2, strength = 1, sharpness = 70 } = {}) {
     super('PainterlyEffect', fragment, {
       attributes: EffectAttribute.CONVOLUTION,
       defines: new Map([['RADIUS', String(Math.max(1, Math.round(radius)))]]),

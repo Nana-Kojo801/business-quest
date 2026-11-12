@@ -9,11 +9,12 @@ import {
 } from 'postprocessing';
 import { GradeEffect } from './effects/GradeEffect';
 import { PainterlyEffect } from './effects/PainterlyEffect';
+import { SharpenEffect } from './effects/SharpenEffect';
 import type { TierSettings } from './quality';
 
 /**
  * The frame pipeline:
- *   scene (HDR, half float) -> painterly filter -> bloom -> tone mapping (Khronos Neutral, keeps hues) -> colour grade -> screen
+ *   scene (HDR, half float) -> painterly filter -> sharpen -> bloom -> tone mapping (Khronos Neutral, keeps hues) -> colour grade -> screen
  *
  * Effects are merged into as few full-screen passes as possible. The painterly
  * filter needs its own pass because it samples neighbouring pixels.
@@ -48,6 +49,7 @@ export class Pipeline {
     });
     this.finalPass = new EffectPass(
       camera,
+      new SharpenEffect(0.4),
       this.bloom,
       new ToneMappingEffect({ mode: ToneMappingMode.NEUTRAL }),
       this.grade,

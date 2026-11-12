@@ -56,6 +56,9 @@ vec3 terrainColor() {
   vec2 p = vTWorld.xz;
   float n1, n2, stroke;
   vec3 c = bqGrassColor(p, n1, n2, stroke);
+  // Fine detail that shows up close: small clumps and short directional strokes.
+  float fine = bqNoiseD(p * 2.4) * 0.6 + bqNoiseB(vec2(dot(p, vec2(0.8, 0.6)) * 6.0, dot(p, vec2(-0.6, 0.8)) * 1.6)) * 0.4;
+  c *= 0.8 + 0.4 * fine;
 
   // Sandy shore and lake bed near the water line.
   float wl = vTWorld.y - tWaterLevel + (n2 - 0.5) * 0.35;

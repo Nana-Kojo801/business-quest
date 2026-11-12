@@ -31,7 +31,7 @@ export function bakeGroundData(): GroundData {
       let grass = 1;
       grass *= 1 - smoothstep(0.25, 0.75, pathMask(x, z)); // not on footpaths
       grass *= smoothstep(TERRAIN.waterLevel + 0.45, TERRAIN.waterLevel + 0.9, h); // not on sand or in water
-      grass *= 1 - smoothstep(0.45, 0.8, slope); // thin on steep ground
+      grass *= 1 - smoothstep(0.65, 1.0, slope); // thin only on steep ground
       grass *= 1 - smoothstep(48, 60, Math.hypot(x, z)); // fades out up the mountains
       for (const b of boulders) {
         const d = Math.hypot(x - b.x, z - b.z);

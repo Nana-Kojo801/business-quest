@@ -149,6 +149,17 @@ const CANOPY_VERTEX = /* glsl */ `
 const CANOPY_FRAGMENT_PARS = /* glsl */ `
 uniform vec3 uSunDirView;
 uniform vec3 uSunGlow;
+${NOISE_GLSL}
+`;
+
+/** Leaf clumps: darker gaps between brighter tufts across the crown. Requires vBqWorldPos. */
+const CANOPY_LEAVES = /* glsl */ `
+#include <color_fragment>
+{
+  vec3 lp = vBqWorldPos;
+  float clump = bqNoiseB(lp.xz * 2.2 + lp.y * 1.9) * 0.65 + bqNoiseC(lp.xz * 5.0 - lp.y * 3.1) * 0.35;
+  diffuseColor.rgb *= 0.78 + 0.36 * smoothstep(0.25, 0.75, clump);
+}
 `;
 
 /**
@@ -218,6 +229,7 @@ export function createTrees(atmosphere: Atmosphere, settings: TreeSettings) {
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>\n${CANOPY_FRAGMENT_PARS}\n${OCCLUSION_FADE_PARS}`)
       .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>\n${OCCLUSION_FADE}`)
+      .replace('#include <color_fragment>', CANOPY_LEAVES)
       .replace('#include <emissivemap_fragment>', CANOPY_GLOW);
   };
   canopyMaterial.customProgramCacheKey = () => 'bq-canopy';

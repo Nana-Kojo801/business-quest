@@ -4,8 +4,8 @@ export default defineConfig({
   testDir: 'tests/e2e',
   timeout: 30_000,
   retries: process.env.CI ? 1 : 0,
-  // CI machines are small and render on the CPU; one test at a time avoids starving them.
-  workers: process.env.CI ? 1 : 2,
+  // Tests render on the CPU (no GPU); one at a time avoids starving each other.
+  workers: 1,
   reporter: process.env.CI ? 'github' : 'list',
   use: {
     baseURL: 'http://localhost:4174',
