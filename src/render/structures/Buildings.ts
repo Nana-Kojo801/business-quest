@@ -6,28 +6,43 @@ import type { Atmosphere } from '../sky/Atmosphere';
 
 /**
  * The landmark tower and the props along the path, built from simple shapes.
- * Each structure is merged into one mesh for its painted body and one for its
- * glowing parts (windows, lanterns, crystal), so the whole set is a handful of
- * draw calls. Front faces +z before rotation.
+ *
+ * Every vertex carries a surface type (aMat). The shader draws detail from it:
+ * stone block courses with mortar, scalloped roof tiles, wood grain and planks,
+ * mottled plaster. That gives close-up detail without extra geometry.
+ *
+ * Each structure is merged into one painted mesh plus one glowing mesh, so the
+ * whole set is a handful of draw calls. Front faces +z before rotation.
  */
+const enum Mat {
+  Plain = 0,
+  Stone = 1,
+  Plaster = 2,
+  Wood = 3,
+  Tile = 4,
+  Metal = 5,
+}
+
 const C = {
   stone: '#ecd9b8',
-  stoneDark: '#c9b292',
-  plaster: '#f2e7d2',
-  timber: '#7d5438',
-  timberDark: '#5a3b28',
+  stoneDark: '#c4ad8e',
+  paving: '#d8c8ad',
+  plaster: '#f4ead6',
+  timber: '#8a5d3c',
+  timberDark: '#5e3e2a',
   roof: '#3f9aa0',
   roofLight: '#86cfc2',
-  gold: '#e3b55e',
-  door: '#5b3a26',
+  gold: '#e8bb5e',
+  iron: '#3c3a42',
+  door: '#6a4329',
+  shutter: '#3f9aa0',
   stripeA: '#d9604c',
-  stripeB: '#f4ead6',
-  crate: '#b48a5e',
-  sack: '#d8c39a',
-  fruitA: '#e8553e',
-  fruitB: '#f2a531',
-  fruitC: '#8cbf4a',
-  banner: '#3f9aa0',
+  stripeB: '#f6eddb',
+  crate: '#b98d5f',
+  sack: '#dcc79e',
+  basket: '#a8794a',
+  fruit: ['#e8553e', '#f2a531', '#8cbf4a', '#c94a7c'],
+  flowers: ['#ff8fb8', '#ffd65a', '#ffffff', '#b9a2ff'],
 };
 const GLOW = {
   window: new THREE.Color('#ffce7a').multiplyScalar(2.6),
@@ -37,8 +52,8 @@ const GLOW = {
 
 type Parts = { body: THREE.BufferGeometry[]; glow: THREE.BufferGeometry[] };
 
-/** Bake a solid colour (or a vertical gradient) into a geometry, normalised for merging. */
-function paint(geo: THREE.BufferGeometry, color: string | THREE.Color, top?: string): THREE.BufferGeometry {
+/** Bake colour (optionally a vertical gradient) and surface type into a geometry, normalised for merging. */
+function paint(geo: THREE.BufferGeometry, color: string | THREE.Color, mat: Mat = Mat.Plain, top?: string): THREE.BufferGeometry {
   const g = geo.index ? geo.toNonIndexed() : geo;
   g.deleteAttribute('uv');
   if (!g.attributes.normal) g.computeVertexNormals();
@@ -48,6 +63,7 @@ function paint(geo: THREE.BufferGeometry, color: string | THREE.Color, top?: str
   g.computeBoundingBox();
   const { min, max } = g.boundingBox!;
   const col = new Float32Array(pos.count * 3);
+  const mats = new Float32Array(pos.count).fill(mat);
   const c = new THREE.Color();
   for (let i = 0; i < pos.count; i++) {
     const t = max.y > min.y ? (pos.getY(i) - min.y) / (max.y - min.y) : 0;
@@ -55,19 +71,51 @@ function paint(geo: THREE.BufferGeometry, color: string | THREE.Color, top?: str
     col.set([c.r, c.g, c.b], i * 3);
   }
   g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.setAttribute('aMat', new THREE.BufferAttribute(mats, 1));
   return g;
+}
+
+/** A copy facing the other way, so thin cloth is visible from both sides. */
+function twoSided(g: THREE.BufferGeometry) {
+  const back = g.clone();
+  const pos = back.attributes.position as THREE.BufferAttribute;
+  const nor = back.attributes.normal as THREE.BufferAttribute;
+  for (let i = 0; i < pos.count; i += 3) {
+    // Swap two vertices of each triangle to flip its winding.
+    for (const attr of Object.values(back.attributes) as THREE.BufferAttribute[]) {
+      const s = attr.itemSize;
+      for (let k = 0; k < s; k++) {
+        const t = attr.array[(i + 1) * s + k];
+        (attr.array as Float32Array)[(i + 1) * s + k] = attr.array[(i + 2) * s + k];
+        (attr.array as Float32Array)[(i + 2) * s + k] = t;
+      }
+    }
+  }
+  for (let i = 0; i < nor.count; i++) nor.setXYZ(i, -nor.getX(i), -nor.getY(i), -nor.getZ(i));
+  return mergeGeometries([g, back])!;
 }
 
 const at = (g: THREE.BufferGeometry, x: number, y: number, z: number, ry = 0) => {
   if (ry) g.rotateY(ry);
   return g.translate(x, y, z);
 };
+const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
 
 /** Octagonal pieces are turned so a flat face (not a corner) faces the front. */
 const oct = (rTop: number, rBottom: number, h: number) => new THREE.CylinderGeometry(rTop, rBottom, h, 8).rotateY(Math.PI / 8);
+/** Face k of an octagon points at angle k * 45 degrees; its centre is at the apothem. */
+const faceAngle = (k: number) => (k / 8) * Math.PI * 2;
+const apothem = (r: number) => r * Math.cos(Math.PI / 8);
+const onFace = (g: THREE.BufferGeometry, k: number, dist: number, y: number) => {
+  const a = faceAngle(k);
+  return g.rotateY(a).translate(Math.sin(a) * dist, y, Math.cos(a) * dist);
+};
+/** Corner k sits between faces k and k+1. */
+const cornerAngle = (k: number) => faceAngle(k) + Math.PI / 8;
 
-/** A sweeping eight-sided roof with upturned corners, plus its underside. */
-function roof(radius: number, height: number, color: string, top: string): THREE.BufferGeometry[] {
+/** A sweeping eight-sided roof with upturned corners, its underside, and gold corner ornaments. */
+function roof(radius: number, height: number, y: number): THREE.BufferGeometry[] {
+  const lift = 0.22;
   const pts = [
     [1.0, 0],
     [0.9, 0.1],
@@ -75,132 +123,358 @@ function roof(radius: number, height: number, color: string, top: string): THREE
     [0.42, 0.62],
     [0.18, 0.88],
     [0.02, 1],
-  ].map(([r, y]) => new THREE.Vector2(r * radius, y * height));
+  ].map(([r, yy]) => new THREE.Vector2(r * radius, yy * height));
   const g = new THREE.LatheGeometry(pts, 8);
   const pos = g.attributes.position as THREE.BufferAttribute;
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i);
-    const y = pos.getY(i);
+    const yy = pos.getY(i);
     const z = pos.getZ(i);
     const phi = Math.atan2(x, z);
     const corner = Math.pow(Math.max(Math.cos(4 * phi), 0), 6);
-    const low = Math.pow(1 - y / height, 3);
+    const low = Math.pow(1 - yy / height, 3);
     const push = 1 + 0.1 * corner * low;
-    pos.setXYZ(i, x * push, y + corner * low * height * 0.22, z * push);
+    pos.setXYZ(i, x * push, yy + corner * low * height * lift, z * push);
   }
   g.rotateY(Math.PI / 8);
-  const under = new THREE.CircleGeometry(radius, 8).rotateX(Math.PI / 2).rotateY(Math.PI / 8);
-  return [paint(g, color, top), paint(under, C.timberDark)];
+  const parts = [paint(g, C.roof, Mat.Tile, C.roofLight).translate(0, y, 0)];
+  parts.push(paint(new THREE.CircleGeometry(radius, 8).rotateX(Math.PI / 2).rotateY(Math.PI / 8), C.timberDark, Mat.Wood).translate(0, y, 0));
+  for (let k = 0; k < 8; k++) {
+    // Gold curl at each upturned corner tip.
+    const a = cornerAngle(k);
+    const tipR = radius * 1.1;
+    const tipY = y + height * lift;
+    // Small and nearly upright, so it reads as a finial on the tip rather than a horn.
+    const curl = new THREE.ConeGeometry(0.035 * radius, 0.16 * radius, 6);
+    curl.translate(0, 0.08 * radius, 0).rotateX(-0.3).rotateY(a);
+    parts.push(paint(at(curl, Math.sin(a) * tipR * 0.99, tipY + 0.02, Math.cos(a) * tipR * 0.99), C.gold, Mat.Metal));
+    parts.push(paint(at(new THREE.IcosahedronGeometry(0.03 * radius + 0.02, 1), Math.sin(a) * tipR * 0.99, tipY, Math.cos(a) * tipR * 0.99), C.gold, Mat.Metal));
+  }
+  // Eave brackets under each corner.
+  for (let k = 0; k < 8; k++) {
+    const a = cornerAngle(k);
+    const b = box(0.12, 0.12, radius * 0.35);
+    b.rotateX(-0.6);
+    parts.push(paint(at(b, Math.sin(a) * radius * 0.78, y - 0.12, Math.cos(a) * radius * 0.78, a), C.timberDark, Mat.Wood));
+  }
+  return parts;
+}
+
+/** A small hanging lamp: iron cage, cap and glowing glass. Returns body and glow parts at the origin (hook at top). */
+function hangingLamp(scale = 1): Parts {
+  const s = scale;
+  const body = [
+    paint(at(new THREE.ConeGeometry(0.16 * s, 0.14 * s, 4).rotateY(Math.PI / 4), 0, -0.07 * s, 0), C.iron, Mat.Metal),
+    paint(at(box(0.24 * s, 0.03 * s, 0.24 * s), 0, -0.4 * s, 0), C.iron, Mat.Metal),
+    paint(at(new THREE.IcosahedronGeometry(0.035 * s, 0), 0, 0.02 * s, 0), C.gold, Mat.Metal),
+  ];
+  for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+    body.push(paint(at(box(0.025 * s, 0.26 * s, 0.025 * s), x * 0.1 * s, -0.27 * s, z * 0.1 * s), C.iron, Mat.Metal));
+  }
+  const glow = [paint(at(box(0.17 * s, 0.24 * s, 0.17 * s), 0, -0.27 * s, 0), GLOW.lantern)];
+  return { body, glow };
 }
 
 function tower(): Parts {
   const body: THREE.BufferGeometry[] = [];
   const glow: THREE.BufferGeometry[] = [];
-  const corners = () => Array.from({ length: 8 }, (_, k) => (k / 8) * Math.PI * 2);
+  const add = (p: Parts, x: number, y: number, z: number, ry = 0) => {
+    p.body.forEach((g) => body.push(at(g, x, y, z, ry)));
+    p.glow.forEach((g) => glow.push(at(g, x, y, z, ry)));
+  };
 
-  body.push(paint(at(oct(3.3, 3.55, 1.6), 0, -0.1, 0), C.stoneDark, C.stone)); // plinth, sunk into the slope
-  body.push(paint(at(oct(2.55, 2.85, 4.2), 0, 2.8, 0), C.stoneDark, C.stone)); // base
-  for (const a of corners()) {
-    // Buttresses at the corners of the base.
-    body.push(paint(at(new THREE.BoxGeometry(0.38, 4.2, 0.55), Math.sin(a) * 2.78, 2.8, Math.cos(a) * 2.78, a), C.stoneDark, C.stone));
-  }
-  body.push(paint(at(oct(2.8, 2.8, 0.3), 0, 5.05, 0), C.timber)); // band
-  body.push(paint(at(oct(2.35, 2.45, 2.4), 0, 6.4, 0), C.plaster)); // upper floor
-  for (const a of corners()) {
-    body.push(paint(at(new THREE.BoxGeometry(0.2, 2.4, 0.2), Math.sin(a) * 2.42, 6.4, Math.cos(a) * 2.42, a), C.timber));
-  }
-  // Windows on alternate faces of the upper floor, small ones on the base.
-  for (let k = 0; k < 8; k += 2) {
-    const face = (k / 8) * Math.PI * 2;
-    glow.push(paint(at(new THREE.PlaneGeometry(0.75, 1.0), Math.sin(face) * 2.27, 6.45, Math.cos(face) * 2.27, face), GLOW.window));
-    body.push(paint(at(new THREE.BoxGeometry(0.95, 0.12, 0.12), Math.sin(face) * 2.3, 5.9, Math.cos(face) * 2.3, face), C.timber));
-    if (k !== 0) glow.push(paint(at(new THREE.PlaneGeometry(0.45, 0.8), Math.sin(face) * 2.68, 3.3, Math.cos(face) * 2.68, face), GLOW.window));
-  }
-  body.push(...roof(3.5, 2.3, C.roof, C.roofLight).map((g) => g.translate(0, 7.6, 0)));
-  body.push(paint(at(oct(0.95, 1.05, 1.3), 0, 10.0, 0), C.plaster)); // cupola
-  for (let k = 0; k < 8; k += 2) {
-    const face = (k / 8) * Math.PI * 2;
-    glow.push(paint(at(new THREE.PlaneGeometry(0.4, 0.6), Math.sin(face) * 0.93, 10.05, Math.cos(face) * 0.93, face), GLOW.window));
-  }
-  body.push(...roof(1.65, 1.7, C.roof, C.roofLight).map((g) => g.translate(0, 10.65, 0)));
-  body.push(paint(at(new THREE.ConeGeometry(0.1, 1.2, 6), 0, 12.9, 0), C.gold)); // spire
+  // Ground: paving around the foot of the tower, plinth sunk into the slope.
+  body.push(paint(at(new THREE.CylinderGeometry(5.2, 5.4, 0.5, 24), 0, -0.05, 0), C.paving, Mat.Stone));
+  body.push(paint(at(oct(3.3, 3.55, 1.6), 0, 0.1, 0), C.stoneDark, Mat.Stone, C.stone));
 
-  // Door with a stone frame, and steps down to the path.
-  body.push(paint(at(new THREE.BoxGeometry(1.35, 2.3, 0.2), 0, 1.85, 2.72), C.door));
-  body.push(paint(at(new THREE.BoxGeometry(1.75, 0.3, 0.35), 0, 3.1, 2.75), C.stone));
-  body.push(paint(at(new THREE.BoxGeometry(0.25, 2.5, 0.35), -0.8, 1.95, 2.75), C.stone));
-  body.push(paint(at(new THREE.BoxGeometry(0.25, 2.5, 0.35), 0.8, 1.95, 2.75), C.stone));
-  glow.push(paint(at(new THREE.PlaneGeometry(0.5, 0.5), 0, 2.55, 2.83), GLOW.window)); // fanlight
-  for (let s = 0; s < 3; s++) body.push(paint(at(new THREE.BoxGeometry(2.0, 0.25, 0.55), 0, 0.55 - s * 0.25, 3.55 + s * 0.5), C.stone));
+  // Stone base with buttresses at the corners.
+  body.push(paint(at(oct(2.55, 2.85, 4.2), 0, 3.0, 0), C.stoneDark, Mat.Stone, C.stone));
+  for (let k = 0; k < 8; k++) {
+    const a = cornerAngle(k);
+    const b = new THREE.CylinderGeometry(0.22, 0.34, 4.4, 4).rotateY(Math.PI / 4);
+    body.push(paint(at(b, Math.sin(a) * 2.75, 3.0, Math.cos(a) * 2.75, a), C.stoneDark, Mat.Stone, C.stone));
+  }
 
-  // Banners hanging from the band either side of the door.
+  // Arched door with a stone surround, studs and lamps either side.
+  const doorZ = apothem(2.75);
+  body.push(paint(at(box(1.3, 1.9, 0.18), 0, 1.75, doorZ), C.door, Mat.Wood));
+  body.push(paint(at(new THREE.CylinderGeometry(0.65, 0.65, 0.18, 16, 1, false, -Math.PI / 2, Math.PI).rotateX(Math.PI / 2), 0, 2.7, doorZ), C.door, Mat.Wood));
+  body.push(paint(at(new THREE.TorusGeometry(0.78, 0.13, 6, 16, Math.PI), 0, 2.7, doorZ + 0.06), C.stone, Mat.Stone));
   for (const side of [-1, 1]) {
-    body.push(paint(at(new THREE.BoxGeometry(0.7, 1.9, 0.05), side * 1.35, 4.0, 2.62), C.banner, C.roofLight));
-    body.push(paint(at(new THREE.BoxGeometry(0.8, 0.08, 0.08), side * 1.35, 4.98, 2.64), C.gold));
+    body.push(paint(at(box(0.26, 1.95, 0.3), side * 0.78, 1.72, doorZ + 0.06), C.stone, Mat.Stone));
+    for (let s = 0; s < 3; s++) body.push(paint(at(new THREE.IcosahedronGeometry(0.035, 0), side * 0.35, 1.2 + s * 0.6, doorZ + 0.1), C.iron, Mat.Metal));
+    body.push(paint(at(box(0.05, 0.05, 0.4), side * 1.25, 3.05, doorZ + 0.15), C.iron, Mat.Metal)); // lamp bracket
+    add(hangingLamp(1.1), side * 1.25, 3.05, doorZ + 0.38);
   }
+  // Steps down to the path.
+  for (let s = 0; s < 4; s++) body.push(paint(at(box(2.3 - s * 0.05, 0.22, 0.5), 0, 0.72 - s * 0.22, doorZ + 0.45 + s * 0.48), C.stone, Mat.Stone));
+
+  // Slit windows in the base.
+  for (const k of [2, 3, 5, 6]) {
+    glow.push(onFace(paint(new THREE.PlaneGeometry(0.4, 0.85), GLOW.window), k, apothem(2.62) + 0.02, 3.6));
+    body.push(onFace(paint(new THREE.TorusGeometry(0.26, 0.07, 4, 10, Math.PI), C.stone, Mat.Stone), k, apothem(2.62) + 0.04, 4.02));
+    body.push(onFace(paint(box(0.6, 0.1, 0.18), C.stone, Mat.Stone), k, apothem(2.62) + 0.05, 3.15));
+  }
+
+  // Cornice and a balcony ring with railing, carried on brackets.
+  body.push(paint(at(oct(2.95, 2.75, 0.35), 0, 5.2, 0), C.stone, Mat.Stone));
+  body.push(paint(at(oct(3.15, 3.15, 0.14), 0, 5.42, 0), C.timber, Mat.Wood));
+  for (let k = 0; k < 8; k++) {
+    const a = faceAngle(k);
+    const br = box(0.12, 0.12, 0.6);
+    br.rotateX(0.7);
+    body.push(paint(at(br, Math.sin(a) * 2.75, 5.05, Math.cos(a) * 2.75, a), C.timberDark, Mat.Wood));
+    // Railing: a top rail and three balusters per face.
+    const side = 2 * 3.05 * Math.tan(Math.PI / 8);
+    body.push(onFace(paint(box(side, 0.07, 0.07), C.timber, Mat.Wood), k, apothem(3.05), 6.0));
+    for (const t of [-0.33, 0, 0.33]) {
+      const bal = box(0.06, 0.55, 0.06).translate(t * side, 0, 0);
+      body.push(onFace(paint(bal, C.timberDark, Mat.Wood), k, apothem(3.05), 5.72));
+    }
+  }
+  for (let k = 0; k < 8; k++) {
+    const a = cornerAngle(k);
+    body.push(paint(at(box(0.09, 0.62, 0.09), Math.sin(a) * 3.1, 5.72, Math.cos(a) * 3.1), C.timberDark, Mat.Wood));
+  }
+
+  // Half-timbered upper floor.
+  const upR = 2.4;
+  body.push(paint(at(oct(upR, upR + 0.05, 2.6), 0, 6.75, 0), C.plaster, Mat.Plaster));
+  const upAp = apothem(upR) + 0.03;
+  const faceW = 2 * upR * Math.tan(Math.PI / 8);
+  for (let k = 0; k < 8; k++) {
+    const a = cornerAngle(k);
+    body.push(paint(at(box(0.2, 2.6, 0.2), Math.sin(a) * (upR - 0.02), 6.75, Math.cos(a) * (upR - 0.02), a), C.timber, Mat.Wood));
+    body.push(onFace(paint(box(faceW, 0.14, 0.08), C.timber, Mat.Wood), k, upAp, 5.55));
+    body.push(onFace(paint(box(faceW, 0.14, 0.08), C.timber, Mat.Wood), k, upAp, 8.0));
+    if (k % 2 === 1) {
+      // X-bracing on the faces between windows.
+      for (const dir of [-1, 1]) {
+        const brace = box(0.12, Math.hypot(faceW, 2.3) * 0.95, 0.06);
+        brace.rotateZ(dir * Math.atan2(faceW, 2.3));
+        body.push(onFace(paint(brace, C.timber, Mat.Wood), k, upAp, 6.78));
+      }
+    }
+  }
+  // Arched windows with frames, open shutters and flower boxes.
+  for (const k of [0, 2, 4, 6]) {
+    glow.push(onFace(paint(new THREE.PlaneGeometry(0.7, 0.85), GLOW.window), k, upAp + 0.01, 6.6));
+    glow.push(onFace(paint(new THREE.CircleGeometry(0.35, 12, 0, Math.PI), GLOW.window), k, upAp + 0.01, 7.02));
+    body.push(onFace(paint(new THREE.TorusGeometry(0.4, 0.06, 4, 12, Math.PI), C.timber, Mat.Wood), k, upAp + 0.04, 7.02));
+    for (const side of [-1, 1]) {
+      body.push(onFace(paint(box(0.08, 0.95, 0.08).translate(side * 0.4, 0, 0), C.timber, Mat.Wood), k, upAp + 0.04, 6.55));
+      const shutter = box(0.38, 0.95, 0.05).translate(side * 0.19, 0, 0);
+      shutter.rotateY(side * -0.9).translate(side * 0.45, 0, 0.02);
+      body.push(onFace(paint(shutter, C.shutter, Mat.Wood), k, upAp + 0.04, 6.55));
+    }
+    body.push(onFace(paint(box(0.85, 0.18, 0.25), C.timberDark, Mat.Wood), k, upAp + 0.14, 6.05));
+    for (let f = 0; f < 6; f++) {
+      const bloom = new THREE.IcosahedronGeometry(0.075, 0).translate(-0.33 + f * 0.13, 0, (f % 2) * 0.06);
+      body.push(onFace(paint(bloom, C.flowers[f % 4]), k, upAp + 0.14, 6.2));
+    }
+  }
+
+  body.push(...roof(3.5, 2.3, 8.1));
+
+  // Lantern room on top, with its own roof, spire and crystal.
+  body.push(paint(at(oct(0.95, 1.05, 1.3), 0, 10.5, 0), C.plaster, Mat.Plaster));
+  for (let k = 0; k < 8; k++) {
+    const a = cornerAngle(k);
+    body.push(paint(at(box(0.1, 1.3, 0.1), Math.sin(a) * 0.98, 10.5, Math.cos(a) * 0.98, a), C.timber, Mat.Wood));
+  }
+  for (const k of [0, 2, 4, 6]) glow.push(onFace(paint(new THREE.PlaneGeometry(0.42, 0.65), GLOW.window), k, apothem(1.0) + 0.02, 10.55));
+  body.push(...roof(1.65, 1.7, 11.15));
+  body.push(paint(at(new THREE.CylinderGeometry(0.02, 0.1, 1.3, 6), 0, 13.4, 0), C.gold, Mat.Metal));
   return { body, glow };
 }
 
 function stall(): Parts {
   const body: THREE.BufferGeometry[] = [];
-  for (const [x, z, h] of [[-1.3, 0.6, 2.2], [1.3, 0.6, 2.2], [-1.3, -0.7, 2.6], [1.3, -0.7, 2.6]]) {
-    body.push(paint(at(new THREE.BoxGeometry(0.14, h, 0.14), x, h / 2 - 0.1, z), C.timberDark, C.timber));
+  const glow: THREE.BufferGeometry[] = [];
+  // Round posts on stone footings; the back pair is taller so the awning slopes forward.
+  for (const [x, z, h] of [[-1.35, 0.7, 2.25], [1.35, 0.7, 2.25], [-1.35, -0.75, 2.65], [1.35, -0.75, 2.65]]) {
+    body.push(paint(at(new THREE.CylinderGeometry(0.07, 0.08, h, 8), x, h / 2, z), C.timberDark, Mat.Wood, C.timber));
+    body.push(paint(at(box(0.24, 0.16, 0.24), x, 0.06, z), C.stone, Mat.Stone));
   }
-  body.push(paint(at(new THREE.BoxGeometry(2.7, 0.9, 0.8), 0, 0.4, 0.45), C.timberDark, C.timber)); // counter
-  body.push(paint(at(new THREE.BoxGeometry(2.8, 0.08, 0.9), 0, 0.88, 0.45), C.timber));
-  // Striped awning, sloping down toward the front.
-  const stripes = 7;
-  for (let i = 0; i < stripes; i++) {
-    const w = 3.0 / stripes;
-    const g = new THREE.BoxGeometry(w, 0.06, 1.8);
-    g.rotateX(0.22);
-    body.push(paint(at(g, -1.5 + w * (i + 0.5), 2.45, 0.0), i % 2 ? C.stripeB : C.stripeA));
-  }
-  // Scalloped valance along the front edge.
-  for (let i = 0; i < stripes; i++) {
-    const w = 3.0 / stripes;
-    body.push(paint(at(new THREE.BoxGeometry(w * 0.95, 0.3, 0.04), -1.5 + w * (i + 0.5), 2.08, 0.92), i % 2 ? C.stripeA : C.stripeB));
-  }
-  // Goods on the counter.
-  const fruit = [C.fruitA, C.fruitB, C.fruitC];
+  // Counter: planked front, top board.
   for (let i = 0; i < 9; i++) {
-    const g = new THREE.IcosahedronGeometry(0.12, 1);
-    body.push(paint(at(g, -1.0 + (i % 3) * 0.25 + Math.floor(i / 3) * 0.75, 1.02, 0.35 + (i % 2) * 0.15), fruit[i % 3]));
+    body.push(paint(at(box(0.3, 0.85, 0.06), -1.2 + i * 0.3, 0.42, 0.85), i % 2 ? C.timber : C.crate, Mat.Wood));
   }
-  // Crates, a barrel and sacks around the stall.
-  body.push(paint(at(new THREE.BoxGeometry(0.6, 0.6, 0.6), 1.85, 0.25, 0.3, 0.3), C.crate));
-  body.push(paint(at(new THREE.BoxGeometry(0.5, 0.5, 0.5), 1.8, 0.8, 0.25, 0.8), C.crate));
-  body.push(paint(at(new THREE.CylinderGeometry(0.32, 0.28, 0.8, 10), -1.9, 0.35, 0.2), C.timber, C.crate));
-  body.push(paint(at(new THREE.SphereGeometry(0.3, 8, 6).scale(1, 1.2, 1), -1.75, 0.3, 0.85), C.sack));
-  body.push(paint(at(new THREE.SphereGeometry(0.26, 8, 6).scale(1, 1.2, 1), -1.35, 0.27, 1.05), C.sack));
-  return { body, glow: [] };
+  body.push(paint(at(box(2.75, 0.85, 0.7), 0, 0.42, 0.48), C.timberDark, Mat.Wood));
+  body.push(paint(at(box(2.95, 0.08, 0.95), 0, 0.88, 0.48), C.timber, Mat.Wood));
+
+  // Striped cloth awning that sags between the posts, with a scalloped front edge.
+  const stripes = 8;
+  const width = 3.1;
+  for (let i = 0; i < stripes; i++) {
+    const w = width / stripes;
+    const g = new THREE.PlaneGeometry(w, 1.85, 2, 6);
+    g.rotateX(-Math.PI / 2);
+    const pos = g.attributes.position as THREE.BufferAttribute;
+    for (let v = 0; v < pos.count; v++) {
+      const x = pos.getX(v) + (-width / 2 + w * (i + 0.5));
+      const z = pos.getZ(v);
+      const sag = Math.sin(((x + width / 2) / width) * Math.PI) * 0.12 + Math.sin(((z + 0.92) / 1.85) * Math.PI) * 0.06;
+      pos.setXYZ(v, x, 2.45 - z * 0.22 - sag, z);
+    }
+    g.computeVertexNormals();
+    body.push(twoSided(paint(g, i % 2 ? C.stripeB : C.stripeA)));
+  }
+  for (let i = 0; i < stripes; i++) {
+    const w = width / stripes;
+    const flap = new THREE.CircleGeometry(w / 2, 10, Math.PI, Math.PI);
+    flap.translate(-width / 2 + w * (i + 0.5), 0, 0);
+    body.push(twoSided(paint(flap, i % 2 ? C.stripeA : C.stripeB)).translate(0, 2.27, 0.93));
+  }
+
+  // Goods: fruit baskets, a balance scale, jars.
+  for (let b = 0; b < 3; b++) {
+    const bx = -1.0 + b * 0.75;
+    body.push(paint(at(new THREE.CylinderGeometry(0.24, 0.18, 0.16, 12, 1, true), bx, 1.0, 0.5), C.basket, Mat.Wood));
+    body.push(paint(at(new THREE.CylinderGeometry(0.18, 0.18, 0.02, 12), bx, 0.93, 0.5), C.basket, Mat.Wood));
+    for (let f = 0; f < 6; f++) {
+      const a = (f / 6) * Math.PI * 2;
+      body.push(paint(at(new THREE.IcosahedronGeometry(0.09, 1), bx + Math.cos(a) * 0.1, 1.08 + (f % 2) * 0.05, 0.5 + Math.sin(a) * 0.1), C.fruit[(b + f) % 4]));
+    }
+  }
+  // Balance scale.
+  const sx = 1.15;
+  body.push(paint(at(new THREE.CylinderGeometry(0.02, 0.03, 0.5, 6), sx, 1.17, 0.45), C.gold, Mat.Metal));
+  body.push(paint(at(box(0.5, 0.025, 0.025), sx, 1.4, 0.45), C.gold, Mat.Metal));
+  for (const side of [-1, 1]) {
+    body.push(paint(at(new THREE.CylinderGeometry(0.1, 0.07, 0.03, 10), sx + side * 0.24, 1.22 + side * 0.02, 0.45), C.gold, Mat.Metal));
+    body.push(paint(at(box(0.008, 0.17, 0.008), sx + side * 0.24, 1.31 + side * 0.01, 0.45), C.iron, Mat.Metal));
+  }
+  // Hanging sign with a gold coin emblem, and a lamp under the awning.
+  body.push(paint(at(box(0.04, 0.35, 0.04), -0.3, 2.05, 0.95), C.iron, Mat.Metal));
+  body.push(paint(at(box(0.04, 0.35, 0.04), 0.3, 2.05, 0.95), C.iron, Mat.Metal));
+  body.push(paint(at(box(0.85, 0.45, 0.06), 0, 1.72, 0.97), C.timber, Mat.Wood));
+  body.push(paint(at(new THREE.CylinderGeometry(0.15, 0.15, 0.03, 16).rotateX(Math.PI / 2), 0, 1.72, 1.01), C.gold, Mat.Metal));
+  const lamp = hangingLamp(0.9);
+  lamp.body.forEach((g) => body.push(at(g, 1.05, 2.18, 0.55)));
+  lamp.glow.forEach((g) => glow.push(at(g, 1.05, 2.18, 0.55)));
+
+  // Crates, a banded barrel and sacks.
+  body.push(paint(at(box(0.6, 0.6, 0.6), 1.9, 0.3, 0.35, 0.3), C.crate, Mat.Wood));
+  body.push(paint(at(box(0.48, 0.48, 0.48), 1.85, 0.84, 0.3, 0.8), C.crate, Mat.Wood));
+  body.push(paint(at(new THREE.CylinderGeometry(0.3, 0.3, 0.8, 12), -1.95, 0.4, 0.25), C.timber, Mat.Wood));
+  body.push(paint(at(new THREE.SphereGeometry(0.33, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 0.15, 1), -1.95, 0.8, 0.25), C.timber, Mat.Wood));
+  for (const y of [0.15, 0.65]) body.push(paint(at(new THREE.TorusGeometry(0.32, 0.025, 4, 16).rotateX(Math.PI / 2), -1.95, y, 0.25), C.iron, Mat.Metal));
+  body.push(paint(at(new THREE.SphereGeometry(0.3, 8, 6).scale(1, 1.2, 1), -1.75, 0.33, 0.95), C.sack));
+  body.push(paint(at(new THREE.SphereGeometry(0.26, 8, 6).scale(1, 1.2, 1), -1.35, 0.29, 1.12), C.sack));
+  return { body, glow };
 }
 
 function lantern(): Parts {
   const body: THREE.BufferGeometry[] = [];
   const glow: THREE.BufferGeometry[] = [];
-  body.push(paint(at(new THREE.CylinderGeometry(0.06, 0.09, 2.2, 6), 0, 1.0, 0), C.timberDark, C.timber));
-  body.push(paint(at(new THREE.BoxGeometry(0.06, 0.06, 0.55), 0, 2.0, 0.25), C.timberDark)); // arm toward the path
-  body.push(paint(at(new THREE.BoxGeometry(0.26, 0.05, 0.26), 0, 1.78, 0.5), C.timberDark)); // lamp cap
-  body.push(paint(at(new THREE.ConeGeometry(0.2, 0.16, 4).rotateY(Math.PI / 4), 0, 1.86, 0.5), C.timberDark));
-  glow.push(paint(at(new THREE.BoxGeometry(0.18, 0.26, 0.18), 0, 1.6, 0.5), GLOW.lantern));
-  body.push(paint(at(new THREE.BoxGeometry(0.24, 0.04, 0.24), 0, 1.45, 0.5), C.timberDark));
+  body.push(paint(at(box(0.36, 0.28, 0.36), 0, 0.08, 0), C.stoneDark, Mat.Stone, C.stone)); // stone footing
+  body.push(paint(at(new THREE.CylinderGeometry(0.065, 0.085, 2.0, 8), 0, 1.15, 0), C.timberDark, Mat.Wood, C.timber));
+  for (const y of [0.35, 1.9]) body.push(paint(at(new THREE.CylinderGeometry(0.1, 0.1, 0.07, 8), 0, y, 0), C.iron, Mat.Metal));
+  body.push(paint(at(new THREE.IcosahedronGeometry(0.07, 0), 0, 2.2, 0), C.gold, Mat.Metal)); // finial
+  // Curved iron arm reaching toward the path.
+  const arm = new THREE.TorusGeometry(0.3, 0.022, 5, 10, Math.PI / 2);
+  arm.rotateY(-Math.PI / 2);
+  body.push(paint(at(arm, 0, 1.75, 0.3), C.iron, Mat.Metal));
+  body.push(paint(at(box(0.02, 0.1, 0.02), 0, 1.98, 0.58), C.iron, Mat.Metal));
+  const lamp = hangingLamp(1);
+  lamp.body.forEach((g) => body.push(at(g, 0, 1.94, 0.6)));
+  lamp.glow.forEach((g) => glow.push(at(g, 0, 1.94, 0.6)));
   return { body, glow };
+}
+
+function arrowBoard(len: number) {
+  const s = new THREE.Shape();
+  s.moveTo(0, -0.11);
+  s.lineTo(len - 0.18, -0.11);
+  s.lineTo(len, 0);
+  s.lineTo(len - 0.18, 0.11);
+  s.lineTo(0, 0.11);
+  s.closePath();
+  return new THREE.ExtrudeGeometry(s, { depth: 0.05, bevelEnabled: false }).translate(0, 0, -0.025);
 }
 
 function signpost(): Parts {
   const body: THREE.BufferGeometry[] = [];
-  body.push(paint(at(new THREE.BoxGeometry(0.12, 1.9, 0.12), 0, 0.85, 0), C.timberDark, C.timber));
-  // Two arrow boards at different angles.
-  for (const [y, ang] of [[1.55, 0.9], [1.2, -1.3]]) {
-    const g = new THREE.BoxGeometry(0.9, 0.2, 0.05);
-    g.translate(0.4, 0, 0);
-    body.push(paint(at(g, 0, y, 0, ang), C.crate));
+  body.push(paint(at(new THREE.CylinderGeometry(0.07, 0.09, 2.0, 8), 0, 0.95, 0), C.timberDark, Mat.Wood, C.timber));
+  body.push(paint(at(new THREE.ConeGeometry(0.11, 0.18, 8), 0, 2.03, 0), C.timberDark, Mat.Wood));
+  for (const [y, ang, len] of [[1.65, 0.9, 1.0], [1.35, -1.4, 0.9], [1.05, 2.4, 0.75]]) {
+    body.push(paint(at(arrowBoard(len).translate(0.06, 0, 0), 0, y, 0, ang), C.crate, Mat.Wood));
+  }
+  // A few stones at the foot.
+  for (let i = 0; i < 4; i++) {
+    const a = i * 1.7;
+    body.push(paint(at(new THREE.IcosahedronGeometry(0.1 + (i % 2) * 0.05, 0).scale(1, 0.6, 1), Math.cos(a) * 0.22, 0.03, Math.sin(a) * 0.22), C.stoneDark, Mat.Stone));
   }
   return { body, glow: [] };
 }
 
 const BUILDERS: Record<Structure['kind'], () => Parts> = { tower, stall, lantern, signpost };
+
+const SURFACE_VERTEX_PARS = /* glsl */ `
+attribute float aMat;
+varying float vMat;
+varying vec3 vSurfPos;
+varying vec3 vSurfNormal;
+varying vec3 vSurfOrigin;
+`;
+const SURFACE_VERTEX = /* glsl */ `
+vMat = aMat;
+vSurfOrigin = modelMatrix[3].xyz;
+vSurfPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
+vSurfNormal = normalize(mat3(modelMatrix) * objectNormal);
+`;
+const SURFACE_FRAGMENT_PARS = /* glsl */ `
+varying float vMat;
+varying vec3 vSurfPos;
+varying vec3 vSurfNormal;
+varying vec3 vSurfOrigin;
+float bHash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+`;
+/** Surface detail by type. Horizontal coordinate follows whichever axis the face runs along. */
+const SURFACE_FRAGMENT = /* glsl */ `
+{
+  vec3 sp = vSurfPos;
+  vec3 sn = normalize(vSurfNormal);
+  float u = abs(sn.x) > abs(sn.z) ? sp.z : sp.x;
+  float m = vMat;
+  float k = 1.0;
+  if (m > 0.5 && m < 1.5) {
+    // Stone blocks: staggered courses with soft mortar joints.
+    float hgt = 0.42;
+    float row = floor(sp.y / hgt);
+    float bu = u / 0.75 + 0.5 * mod(row, 2.0);
+    if (sn.y > 0.7) { row = floor(sp.z / 0.6); bu = sp.x / 0.6 + 0.5 * mod(row, 2.0); }
+    vec2 f = vec2(fract(bu), sn.y > 0.7 ? fract(sp.z / 0.6) : fract(sp.y / hgt));
+    float joint = smoothstep(0.0, 0.07, f.x) * smoothstep(1.0, 0.93, f.x) * smoothstep(0.0, 0.12, f.y) * smoothstep(1.0, 0.88, f.y);
+    k = mix(0.7, 1.0, joint) * (0.88 + 0.2 * bHash(vec2(floor(bu), row)));
+  } else if (m > 1.5 && m < 2.5) {
+    // Plaster: gentle mottling.
+    k = 0.94 + 0.08 * bHash(floor(vec2(u, sp.y) * 3.0));
+  } else if (m > 2.5 && m < 3.5) {
+    // Wood: planks and grain.
+    float along = abs(sn.y) > 0.7 ? sp.x : u;
+    float grain = sin(along * 31.0 + sin(sp.y * 7.0 + along * 3.0) * 2.0);
+    float plank = fract(sp.y / 0.16);
+    k = (0.9 + 0.07 * grain) * mix(0.82, 1.0, smoothstep(0.0, 0.12, plank));
+  } else if (m > 3.5 && m < 4.5) {
+    // Roof tiles: rows of scallops, each tile slightly different.
+    float rowH = 0.24;
+    float row = floor(sp.y / rowH);
+    float ang = atan(sp.x - vSurfOrigin.x, sp.z - vSurfOrigin.z);
+    float r = length(sp.xz - vSurfOrigin.xz);
+    float tu = ang * r / 0.3 + 0.5 * mod(row, 2.0);
+    float fy = fract(sp.y / rowH);
+    float curve = abs(fract(tu) - 0.5) * 2.0;
+    float edge = smoothstep(0.0, 0.18, fy - curve * curve * 0.45);
+    k = mix(0.68, 1.06, edge) * (0.92 + 0.14 * bHash(vec2(floor(tu), row)));
+  } else if (m > 4.5) {
+    // Metal: a little sheen on upward faces.
+    k = 1.0 + 0.25 * smoothstep(0.3, 1.0, sn.y);
+  }
+  diffuseColor.rgb *= k;
+}
+`;
 
 export function createBuildings(atmosphere: Atmosphere) {
   const group = new THREE.Group();
@@ -209,54 +483,67 @@ export function createBuildings(atmosphere: Atmosphere) {
   const bodyMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 });
   bodyMaterial.onBeforeCompile = (shader) => {
     shader.uniforms.uPlayerPos = uniforms.uPlayerPos;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>\n${SURFACE_VERTEX_PARS}`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>\n${SURFACE_VERTEX}`);
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\n${OCCLUSION_FADE_PARS}`)
-      .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>\n${OCCLUSION_FADE}`);
+      .replace('#include <common>', `#include <common>\n${SURFACE_FRAGMENT_PARS}\n${OCCLUSION_FADE_PARS}`)
+      .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>\n${OCCLUSION_FADE}`)
+      .replace('#include <color_fragment>', `#include <color_fragment>\n${SURFACE_FRAGMENT}`);
   };
   bodyMaterial.customProgramCacheKey = () => 'bq-building';
   // Glowing parts: unlit colours above 1.0, so the bloom picks them up.
   const glowMaterial = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
 
   const geos: THREE.BufferGeometry[] = [];
-  let crystal: THREE.Mesh | null = null;
+  const spinners: { mesh: THREE.Object3D; baseY: number; speed: number; tilt: number }[] = [];
   for (const s of STRUCTURES) {
     const { body, glow } = BUILDERS[s.kind]();
     const y = heightAt(s.x, s.z) - (s.kind === 'tower' ? 0.25 : 0.05);
-    const place = (g: THREE.BufferGeometry) => g.rotateY(s.rot).translate(s.x, y, s.z);
-    const b = place(mergeGeometries(body)!);
-    group.add(new THREE.Mesh(b, bodyMaterial));
+    // Each structure's mesh sits at its own origin so the roof-tile pattern can find its centre.
+    const b = mergeGeometries(body)!.rotateY(s.rot);
+    const bodyMesh = new THREE.Mesh(b, bodyMaterial);
+    bodyMesh.position.set(s.x, y, s.z);
+    group.add(bodyMesh);
     geos.push(b);
     if (glow.length) {
-      const gl = place(mergeGeometries(glow)!);
+      const gl = mergeGeometries(glow)!.rotateY(s.rot);
       const m = new THREE.Mesh(gl, glowMaterial);
+      m.position.set(s.x, y, s.z);
       m.name = 'glow';
       group.add(m);
       geos.push(gl);
     }
     if (s.kind === 'tower') {
-      const cg = paint(new THREE.OctahedronGeometry(0.42), GLOW.crystal);
-      cg.scale(1, 1.6, 1);
-      crystal = new THREE.Mesh(cg, glowMaterial);
-      crystal.position.set(s.x, y + 13.75, s.z);
-      crystal.name = 'crystal';
+      const cg = paint(new THREE.OctahedronGeometry(0.42), GLOW.crystal).scale(1, 1.6, 1);
+      const crystal = new THREE.Mesh(cg, glowMaterial);
+      crystal.position.set(s.x, y + 14.55, s.z);
+      crystal.name = 'glow';
       group.add(crystal);
-      geos.push(cg);
+      spinners.push({ mesh: crystal, baseY: crystal.position.y, speed: 0.6, tilt: 0 });
+      // A gold ring circling the crystal on a tilted axis.
+      const rg = paint(new THREE.TorusGeometry(0.75, 0.035, 6, 32), C.gold, Mat.Metal);
+      const ring = new THREE.Mesh(rg, bodyMaterial);
+      ring.position.copy(crystal.position);
+      group.add(ring);
+      spinners.push({ mesh: ring, baseY: ring.position.y, speed: -0.9, tilt: 1.15 });
+      geos.push(cg, rg);
     }
   }
 
   atmosphere.adopt(group, { cast: true, receive: true });
   group.children.forEach((m) => {
-    if (m.name === 'glow' || m.name === 'crystal') m.castShadow = false;
+    if (m.name === 'glow') m.castShadow = false;
   });
 
-  const baseY = crystal?.position.y ?? 0;
   return {
     group,
     update(time: number, player: THREE.Vector3) {
       uniforms.uPlayerPos.value.copy(player);
-      if (crystal) {
-        crystal.rotation.y = time * 0.6;
-        crystal.position.y = baseY + Math.sin(time * 1.1) * 0.18;
+      for (const s of spinners) {
+        s.mesh.position.y = s.baseY + Math.sin(time * 1.1) * 0.18;
+        if (s.tilt) s.mesh.rotation.set(s.tilt, time * s.speed, 0.3 * Math.sin(time * 0.7));
+        else s.mesh.rotation.y = time * s.speed;
       }
     },
     dispose() {
