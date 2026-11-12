@@ -16,8 +16,9 @@ export class LocalController {
   ) {}
 
   /** Call once per frame. Sends a move command only when the intent changes. */
-  update(cameraYaw: number) {
-    const m = this.input.read();
+  update(cameraYaw: number, enabled = true) {
+    // While talking or in a menu the player stands still, and presses go to the UI instead.
+    const m = enabled ? this.input.read() : { x: 0, y: 0 };
     // Screen "up" (m.y > 0) means away from the camera.
     const sin = Math.sin(cameraYaw);
     const cos = Math.cos(cameraYaw);
@@ -27,6 +28,6 @@ export class LocalController {
       this.last = { x, z };
       this.transport.send({ type: 'move', playerId: this.playerId, x, z });
     }
-    if (this.input.takeInteract()) this.transport.send({ type: 'interact', playerId: this.playerId });
+    if (enabled && this.input.takeInteract()) this.transport.send({ type: 'interact', playerId: this.playerId });
   }
 }

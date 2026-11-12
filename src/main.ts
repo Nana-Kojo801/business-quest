@@ -1,12 +1,9 @@
 import { Game } from './game';
-import { createDebugOverlay } from './ui/debugOverlay';
 
 const game = new Game(document.getElementById('app')!);
 game.start();
 
 const quality = () => ({ ...game.view.quality.state, pixelRatio: game.view.renderer.getPixelRatio() });
-
-if (new URLSearchParams(location.search).get('debug') === '1') createDebugOverlay(quality);
 
 /** Debug/test hook. Read by the automated tests; not used by gameplay. */
 Object.defineProperty(window, '__bq', {
@@ -21,6 +18,9 @@ Object.defineProperty(window, '__bq', {
       camera: { yaw: game.view.rig.yaw, pitch: game.view.rig.pitch, distance: game.view.rig.distance },
       actionTarget: game.actionTarget,
       interaction: p.interaction,
+      mode: game.mode,
+      objective: game.objectiveText,
+      met: [...game.met],
     };
   },
 });

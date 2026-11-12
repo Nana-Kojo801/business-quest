@@ -4,6 +4,9 @@ type Debug = {
   camera: { yaw: number; pitch: number; distance: number };
   actionTarget: string | null;
   interaction: { targetId: string; tick: number } | null;
+  mode: 'explore' | 'dialogue' | 'menu';
+  objective: string;
+  met: string[];
   frames: number;
   player: { x: number; z: number };
   quality: { tier: string; scale: number; pixelRatio: number };
@@ -150,8 +153,8 @@ test('mouse drag orbits and the wheel zooms', async ({ page }, info) => {
 // Spawn 1.4 m in front of the keeper (see src/core/npcs.ts).
 const NEAR_KEEPER = '?quality=low&adaptive=0&spawn=7.66,-22.17';
 
-test('near a villager, talking works (E on desktop, action button on touch)', async ({ page }, info) => {
-  test.setTimeout(60_000);
+test('talking to a villager opens a conversation that can be read through to the end', async ({ page }, info) => {
+  test.setTimeout(90_000);
   const errors = await load(page, NEAR_KEEPER, 3);
   await expect.poll(async () => (await readDebug(page)).actionTarget, { timeout: 20_000 }).toBe('keeper');
   if (info.project.name === 'desktop') {
@@ -162,9 +165,44 @@ test('near a villager, talking works (E on desktop, action button on touch)', as
     await expect(button).toHaveClass(/show/);
     await button.dispatchEvent('pointerdown');
   }
-  await expect.poll(async () => (await readDebug(page)).interaction?.targetId, { timeout: 20_000 }).toBe('keeper');
-  await expect(page.getByTestId('bubble-keeper')).toHaveClass(/show/);
+  await expect.poll(async () => (await readDebug(page)).mode, { timeout: 20_000 }).toBe('dialogue');
+  const dialogue = page.getByTestId('dialogue');
+  await expect(dialogue).toHaveClass(/open/);
+  // Tap to finish typing; the first line offers choices.
+  await dialogue.dispatchEvent('pointerdown');
+  await expect(page.getByTestId('choice-1')).toBeVisible();
+  await page.getByTestId('choice-1').dispatchEvent('pointerdown'); // "What is this tower?"
+  await expect(page.getByTestId('dialogue-text')).not.toBeEmpty();
+  // Keep tapping until the conversation ends.
+  for (let i = 0; i < 12 && (await readDebug(page)).mode === 'dialogue'; i++) {
+    await dialogue.dispatchEvent('pointerdown');
+    await page.waitForTimeout(150);
+  }
+  await expect.poll(async () => (await readDebug(page)).mode, { timeout: 20_000 }).toBe('explore');
+  const d = await readDebug(page);
+  expect(d.met).toContain('keeper');
+  expect(d.objective).toContain('(1/2)');
+  await expect(page.getByTestId('objective')).toContainText('(1/2)');
   expect(errors).toEqual([]);
+});
+
+test('the menu opens, shows the journal, and remembers settings', async ({ page }) => {
+  test.setTimeout(60_000);
+  await load(page);
+  await page.getByTestId('menu-button').dispatchEvent('pointerdown');
+  await expect(page.getByTestId('menu')).toHaveClass(/open/);
+  await expect(page.getByTestId('menu')).toContainText('First Steps');
+  expect((await readDebug(page)).mode).toBe('menu');
+  await page.getByTestId('tab-settings').click();
+  await page.getByTestId('fps-setting').check();
+  await expect(page.getByTestId('debug-overlay')).toBeVisible();
+  await page.getByTestId('menu-close').click();
+  await expect(page.getByTestId('menu')).not.toHaveClass(/open/);
+  expect((await readDebug(page)).mode).toBe('explore');
+  // Settings survive a reload.
+  await page.reload();
+  await expect.poll(async () => (await readDebug(page))?.frames ?? 0, { timeout: 40_000 }).toBeGreaterThan(2);
+  await expect(page.getByTestId('debug-overlay')).toBeVisible();
 });
 
 test('no action is offered away from villagers', async ({ page }) => {

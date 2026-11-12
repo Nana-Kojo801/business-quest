@@ -29,8 +29,11 @@ export class WorldView {
   readonly rig: CameraRig;
   /** Seconds since the player last moved the camera by hand (set by the game each frame). */
   cameraIdle = Infinity;
+  /** While set, the local player turns to face this point (e.g. during a conversation). */
+  faceTarget: { x: number; z: number } | null = null;
+  private faceYaw: number | null = null;
   /** Called when a villager is talked to (for the speech bubble). */
-  onInteraction: (npcId: string) => void = () => {};
+  onInteraction: (npcId: string, playerId: string) => void = () => {};
   private seenInteraction = new Map<string, number>();
   private projV = new THREE.Vector3();
   /** World point to screen pixels (for DOM overlays such as speech bubbles). */
@@ -172,6 +175,34 @@ export class WorldView {
     this.scene.add(this.particles.group, this.shafts.mesh);
   }
 
+  private convCover = 0;
+  /** Frame a conversation between two ground points (feet positions). */
+  startConversation(a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }) {
+    this.rig.conversation = { a: new THREE.Vector3(a.x, a.y, a.z), b: new THREE.Vector3(b.x, b.y, b.z), cover: this.convCover };
+  }
+  endConversation() {
+    this.rig.conversation = null;
+  }
+  /** Fraction of the screen covered by the dialogue box (keeps faces above it). */
+  setConversationCover(f: number) {
+    this.convCover = f;
+    if (this.rig.conversation) this.rig.conversation.cover = f;
+  }
+
+  /** Switch quality from settings: a fixed tier, or null for automatic. */
+  setQuality(tier: 'low' | 'medium' | 'high' | null) {
+    const q = this.quality.state;
+    q.adaptive = tier === null;
+    if (tier && tier !== q.tier) {
+      q.tier = tier;
+      q.scale = 1;
+      this.quality.onChange(q, true);
+    } else if (tier) {
+      q.scale = 1;
+      this.resize();
+    }
+  }
+
   resize() {
     const w = this.container.clientWidth;
     const h = this.container.clientHeight;
@@ -215,7 +246,18 @@ export class WorldView {
       // Heading 0 faces -z; the model faces +z, hence pi - heading. Interpolate the short way round.
       let dh = c.heading - p.heading;
       dh = Math.atan2(Math.sin(dh), Math.cos(dh));
-      obj.rotation.y = Math.PI - (p.heading + dh * alpha);
+      const simYaw = Math.PI - (p.heading + dh * alpha);
+      if (id === followId && this.faceTarget) {
+        const want = Math.atan2(this.faceTarget.x - obj.position.x, this.faceTarget.z - obj.position.z);
+        this.faceYaw ??= obj.rotation.y;
+        let d = want - this.faceYaw;
+        d = Math.atan2(Math.sin(d), Math.cos(d));
+        this.faceYaw += d * Math.min(1, dt * 6);
+        obj.rotation.y = this.faceYaw;
+      } else {
+        if (id === followId) this.faceYaw = null;
+        obj.rotation.y = simYaw;
+      }
       ch.update(dt, performance.now() / 1000, p.speed + (c.speed - p.speed) * alpha);
     }
 
@@ -258,7 +300,7 @@ export class WorldView {
       const v = this.npcs.find((n) => n.npc.id === it.targetId);
       if (v) {
         v.character.wave();
-        this.onInteraction(it.targetId);
+        this.onInteraction(it.targetId, pl.id);
       }
     }
 

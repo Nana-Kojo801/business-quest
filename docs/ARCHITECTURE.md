@@ -145,3 +145,17 @@ close-up camera for judging characters.
   reach, preferring ones in front); the result is stored on the player state, so the UI prompt,
   the simulation and future multiplayer agree.
 - Debug: `?spawn=x,z` starts the player elsewhere.
+
+## UI
+
+All UI is DOM over the canvas, styled from `src/ui/theme.ts` (colour tokens, bundled fonts:
+Marcellus for titles, Nunito for text; SVG icons in `icons.ts`).
+- `dialogue.ts`: conversation box (typewriter, tap/Space/E to continue, numbered choices);
+  bottom band with stacked choices in portrait, choices beside it on wide screens. Scripts are
+  data in `src/content/dialogue.ts`.
+- `hud.ts`: objective tracker, menu button, arrival banner. `menu.ts`: Journal, Codex,
+  Settings (quality, camera sensitivity, FPS readout; saved in localStorage).
+- `src/game.ts` runs the screen flow (explore / dialogue / menu): movement and camera input are
+  ignored outside explore, and a conversation swings the camera to a two-shot that keeps faces
+  above the dialogue box (`CameraRig.conversation`).
+- UI files never import three.js; anything needing 3D (screen projection) goes through the view.

@@ -23,6 +23,13 @@ export class CameraRig {
   private focusInit = false;
   private camHeightBoost = 0;
   private framed = false;
+  /** Multiplies orbit drag speed (settings). */
+  sensitivity = 1;
+  /** While set, the camera frames a two-person conversation instead of following. */
+  conversation: { a: THREE.Vector3; b: THREE.Vector3; cover: number } | null = null;
+  private convBlend = 0;
+  private convPos = new THREE.Vector3();
+  private convLook = new THREE.Vector3();
   /** Enabled while the player is using touch controls. */
   autoFollow = false;
 
@@ -40,7 +47,8 @@ export class CameraRig {
 
   /** Apply input: orbit drag in pixels, zoom in steps. */
   input(dx: number, dy: number, zoom: number, viewHeight: number) {
-    const k = 3.2 / Math.max(viewHeight, 300); // a full-height drag turns about 180 degrees
+    if (this.conversation) return;
+    const k = (3.2 / Math.max(viewHeight, 300)) * this.sensitivity; // a full-height drag turns about 180 degrees
     this.yawTarget += dx * k;
     this.pitchTarget = THREE.MathUtils.clamp(this.pitchTarget + dy * k * 0.7, CameraRig.MIN_PITCH, CameraRig.MAX_PITCH);
     this.distTarget = THREE.MathUtils.clamp(this.distTarget * Math.pow(1.12, zoom), CameraRig.MIN_DIST, CameraRig.MAX_DIST);
@@ -102,6 +110,36 @@ export class CameraRig {
     }
     this.camHeightBoost += (need - this.camHeightBoost) * ease(need > this.camHeightBoost ? 20 : 4);
     pos.y += Math.max(0, this.camHeightBoost);
+
+    // Conversation shot: from the side of the pair, both in frame, faces kept above the dialogue box.
+    this.convBlend += ((this.conversation ? 1 : 0) - this.convBlend) * ease(3.5);
+    if (this.conversation) {
+      const { a, b, cover } = this.conversation;
+      const mid = a.clone().add(b).multiplyScalar(0.5);
+      const ab = b.clone().sub(a);
+      ab.y = 0;
+      const sep = Math.max(ab.length(), 0.8);
+      ab.normalize();
+      // Perpendicular to the pair, on whichever side the camera already is.
+      let side = new THREE.Vector3(-ab.z, 0, ab.x);
+      if (side.dot(pos.clone().sub(mid)) < 0) side.negate();
+      // Swing a little toward the player's back, so we see more of the other person's face.
+      side.addScaledVector(ab, -0.45).normalize();
+      const d = (portrait ? 3.6 : 3.0) + sep * 0.9;
+      this.convPos.copy(mid).addScaledVector(side, d);
+      this.convPos.y = mid.y + 1.75;
+      // Aim lower when the dialogue box covers more of the screen, so faces sit in the clear area above it.
+      const fovRad = (this.camera.fov * Math.PI) / 180;
+      const drop = Math.tan(fovRad / 2) * d * cover;
+      this.convLook.set(mid.x, mid.y + 1.3 - drop, mid.z);
+      const g = heightAt(this.convPos.x, this.convPos.z) + 0.6;
+      if (this.convPos.y < g) this.convPos.y = g;
+    }
+    if (this.convBlend > 0.001) {
+      const t = this.convBlend * this.convBlend * (3 - 2 * this.convBlend);
+      pos.lerp(this.convPos, t);
+      target.lerp(this.convLook, t);
+    }
 
     this.camera.position.copy(pos);
     this.camera.lookAt(target);

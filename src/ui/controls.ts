@@ -33,7 +33,7 @@ const CSS = `
 .bq-prompt.show { opacity: 1; transform: translate(-50%, 0); }
 .bq-key { min-width: 26px; height: 26px; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center;
   background: linear-gradient(#fffaf0, #e9d3a6); color: #4a2e1c; font-weight: 800; font-size: 13px; box-shadow: 0 2px 0 #b8925a; }
-.bq-hint { position: fixed; left: 50%; top: calc(14px + env(safe-area-inset-top)); transform: translateX(-50%); z-index: 6;
+.bq-hint { position: fixed; left: 50%; top: calc(24% + 118px); transform: translateX(-50%); z-index: 6;
   color: rgba(255,247,232,.92); font: 500 13px/1.4 system-ui, sans-serif; text-shadow: 0 1px 3px rgba(30,15,20,.6);
   pointer-events: none; transition: opacity 1s ease; white-space: nowrap; }
 `;
@@ -43,7 +43,7 @@ const TALK_ICON = `<svg viewBox="0 0 32 32" aria-hidden="true"><path fill="curre
 export interface Controls {
   surface: HTMLElement;
   /** Call each frame with the input state and what (if anything) can be interacted with. */
-  update(input: Input, action: { label: string } | null): void;
+  update(input: Input, action: { label: string } | null, visible?: boolean): void;
 }
 
 export function createControls(onAction: () => void): Controls {
@@ -83,12 +83,24 @@ export function createControls(onAction: () => void): Controls {
   hint.className = 'bq-hint';
   document.body.appendChild(hint);
   let hintShown = false;
-  setTimeout(() => (hint.style.opacity = '0'), 6000);
+  hint.style.opacity = '0';
+  // The hint appears once the arrival banner has faded, then fades itself.
+  setTimeout(() => (hint.style.opacity = '1'), 3800);
+  setTimeout(() => (hint.style.opacity = '0'), 9500);
 
   return {
     surface,
-    update(input, act) {
+    update(input, act, visible = true) {
       const touch = input.touchMode;
+      // Hidden (and inert) during conversations and menus.
+      surface.style.pointerEvents = visible ? 'auto' : 'none';
+      if (!visible) {
+        stick.style.display = 'none';
+        action.classList.remove('show');
+        prompt.classList.remove('show');
+        hint.style.opacity = '0';
+        return;
+      }
       if (!hintShown || hint.dataset.touch !== String(touch)) {
         hintShown = true;
         hint.dataset.touch = String(touch);
