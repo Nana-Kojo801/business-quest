@@ -24,7 +24,10 @@ of done.
 - Ask them for the `?debug=1` line or the Settings → "Show frame rate" readout after visual
   changes; target 60 fps at 100% resolution **on medium** (check the readout says `medium`, not
   `low`: on Auto the game silently drops a tier when slow). No MSAA on phones (halved fps, #41).
-  Before shipping, compare CPU-renderer frame cost against the last build that held 60 fps.
+  Before shipping, compare CPU-renderer frame cost against the last build that held 60 fps
+  (interleave runs and take the best of three: single readings vary by 20%+).
+- The readout's `worst N ms` is the slowest frame; a high number with a good fps means stutter.
+  The owner also tests on an old 2018 Intel Mac (4 GB), which needs the low setting.
 - They like the current handcrafted look and want it sharper and more premium, not realistic.
 - Commit messages: say "Part of #N", **never "Closes #N"** (that closes issues before sign-off).
   Close issues on GitHub only after sign-off.
@@ -39,7 +42,7 @@ of done.
 
 ## Debug URL options
 `?quality=low|medium|high`, `?adaptive=0`, `?dpr=1.5` / `?msaa=0|4` (override every tier, for
-measuring costs on the owner's phone), `?debug=1`, `?sky=goldenHour|day|dusk`,
+measuring costs on the owner's phone), `?fps=30` (even 30 fps cap), `?debug=1`, `?sky=goldenHour|day|dusk`,
 `?cam=close` (character close-up camera), `?spawn=x,z`, `?quest=meet|return|market|debrief|done`.
 `window.__bq` exposes state for tests; `window.triBreakdown()` lists triangles per object.
 

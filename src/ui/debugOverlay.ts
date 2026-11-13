@@ -22,7 +22,7 @@ export function createDebugOverlay(read: () => QualityState & { pixelRatio: numb
   document.body.appendChild(el);
   const refresh = () => {
     const q = read();
-    el.textContent = `${q.fps} fps · ${q.tier} · res ${Math.round(q.scale * 100)}% · dpr ${q.pixelRatio.toFixed(2)}`;
+    el.textContent = `${q.fps} fps · worst ${q.worstMs} ms · ${q.tier} · res ${Math.round(q.scale * 100)}% · dpr ${q.pixelRatio.toFixed(2)}`;
   };
   refresh();
   setInterval(refresh, 500);

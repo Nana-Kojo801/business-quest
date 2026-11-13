@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { TERRAIN, heightAt } from '../../core';
+import { TERRAIN, distToPath, heightAt } from '../../core';
 import { NOISE_GLSL, getNoiseTexture } from '../noiseTexture';
 import { GRASS_COLOR_GLSL, PALETTE_UNIFORMS_GLSL, paletteUniforms } from './palette';
 import { GROUND_DATA_GLSL, type GroundData } from './groundData';
@@ -16,6 +16,7 @@ const SEGMENTS = 220;
 function buildGeometry() {
   const geo = new THREE.PlaneGeometry(2, 2, SEGMENTS, SEGMENTS).rotateX(-Math.PI / 2);
   const pos = geo.attributes.position as THREE.BufferAttribute;
+  const pathD = new Float32Array(pos.count);
   const half = SIZE / 2;
   // Warp grid coordinates so vertices bunch up near the centre.
   const warp = (u: number) => Math.sign(u) * Math.pow(Math.abs(u), 1.7) * half;
@@ -23,23 +24,30 @@ function buildGeometry() {
     const x = warp(pos.getX(i));
     const z = warp(pos.getZ(i));
     pos.setXYZ(i, x, heightAt(x, z), z);
+    pathD[i] = Math.min(distToPath(x, z), 50);
   }
+  // Rough distance to the nearest path: pixels far from any path skip the per-pixel path work.
+  geo.setAttribute('aPathD', new THREE.BufferAttribute(pathD, 1));
   geo.computeVertexNormals();
   geo.computeBoundingSphere();
   return geo;
 }
 
 const TERRAIN_PARS_VERTEX = /* glsl */ `
+attribute float aPathD;
+varying float vPathD;
 varying vec3 vTWorld;
 varying vec3 vTNormal;
 `;
 
 const TERRAIN_VERTEX = /* glsl */ `
+vPathD = aPathD;
 vTWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;
 vTNormal = normalize(mat3(modelMatrix) * objectNormal);
 `;
 
 const TERRAIN_PARS_FRAGMENT = /* glsl */ `
+varying float vPathD;
 varying vec3 vTWorld;
 varying vec3 vTNormal;
 ${PALETTE_UNIFORMS_GLSL}
@@ -88,13 +96,18 @@ vec3 terrainColor() {
   c *= 0.8 + 0.4 * fine;
   // Micro detail under the blades (gaps between tufts), faded out with distance before it can shimmer.
   float near = 1.0 - smoothstep(5.0, 16.0, camDist);
-  float micro = bqNoiseD(p * 11.0) * 0.55 + bqNoiseC(vec2(dot(p, vec2(0.8, 0.6)), dot(p, vec2(-0.6, 0.8))) * vec2(26.0, 9.0)) * 0.45;
-  c *= mix(1.0, 0.8 + 0.34 * micro, near * gd.g);
+  if (near * gd.g > 0.0) {
+    float micro = bqNoiseD(p * 11.0) * 0.55 + bqNoiseC(vec2(dot(p, vec2(0.8, 0.6)), dot(p, vec2(-0.6, 0.8))) * vec2(26.0, 9.0)) * 0.45;
+    c *= mix(1.0, 0.8 + 0.34 * micro, near * gd.g);
+  }
   // Mid-distance tufts, so slopes beyond the drawn grass keep some texture; faded out as they
   // get smaller than a couple of pixels, before they can shimmer.
   float tuftPx = length(fwidth(p * 4.0));
-  float tuft = bqNoiseC(p * 4.0 + 13.0) * 0.6 + bqNoiseD(p * 9.0) * 0.4;
-  c *= mix(1.0, 0.86 + 0.26 * tuft, (1.0 - smoothstep(0.35, 0.9, tuftPx)) * (1.0 - near * gd.g));
+  float tuftAmt = (1.0 - smoothstep(0.35, 0.9, tuftPx)) * (1.0 - near * gd.g);
+  if (tuftAmt > 0.0) {
+    float tuft = bqNoiseC(p * 4.0 + 13.0) * 0.6 + bqNoiseD(p * 9.0) * 0.4;
+    c *= mix(1.0, 0.86 + 0.26 * tuft, tuftAmt);
+  }
   // Past the edge of the drawn grass, lift the ground to the blades' average colour (their tips
   // are lighter), so there is no line where the grass ends.
   c *= mix(1.0, 1.1, gd.g * smoothstep(8.0, 16.0, camDist));
@@ -106,20 +119,23 @@ vec3 terrainColor() {
 
   // Footpaths: a crisp, irregular edge, a compacted darker rim just inside it, a worn lighter
   // centre, and a darker lip of grass just outside.
-  float d = pathEdgeDistance(p);
+  // Only near a path (the wobbled edge reaches at most ~1.7 m from the centreline).
   const float EDGE = PATH_EDGE;
-  float aa = fwidth(d) * 0.8 + 0.015;
-  float pm = 1.0 - smoothstep(EDGE - aa, EDGE + aa, d);
-  if (pm > 0.0 || d < EDGE + 0.3) {
-    vec3 dirt = mix(tDirtDark, tDirt, smoothstep(EDGE - 0.05, 0.1, d) * (0.7 + 0.3 * stroke));
-    dirt *= 1.0 - 0.18 * (1.0 - smoothstep(EDGE - 0.22, EDGE - 0.02, d));
-    // Trodden texture: soft mottling and fine grit.
-    dirt *= 0.9 + 0.12 * bqNoiseC(p * 3.0) + 0.1 * (bqNoiseD(p * 18.0) - 0.5) * near;
-    // Pebbles gather toward the edges; the trodden centre stays mostly clear.
-    float edgeBand = smoothstep(0.25, EDGE - 0.1, d);
-    if (near > 0.0) dirt = pebbles(p * 4.0, dirt, near * (0.04 + 0.2 * edgeBand));
-    c *= 1.0 - 0.22 * (1.0 - smoothstep(EDGE, EDGE + 0.28, d)) * (1.0 - pm);
-    c = mix(c, dirt, pm);
+  if (vPathD < 2.6) {
+    float d = pathEdgeDistance(p);
+    float aa = fwidth(d) * 0.8 + 0.015;
+    float pm = 1.0 - smoothstep(EDGE - aa, EDGE + aa, d);
+    if (pm > 0.0 || d < EDGE + 0.3) {
+      vec3 dirt = mix(tDirtDark, tDirt, smoothstep(EDGE - 0.05, 0.1, d) * (0.7 + 0.3 * stroke));
+      dirt *= 1.0 - 0.18 * (1.0 - smoothstep(EDGE - 0.22, EDGE - 0.02, d));
+      // Trodden texture: soft mottling and fine grit.
+      dirt *= 0.9 + 0.12 * bqNoiseC(p * 3.0) + 0.1 * (bqNoiseD(p * 18.0) - 0.5) * near;
+      // Pebbles gather toward the edges; the trodden centre stays mostly clear.
+      float edgeBand = smoothstep(0.25, EDGE - 0.1, d);
+      if (near > 0.0) dirt = pebbles(p * 4.0, dirt, near * (0.04 + 0.2 * edgeBand));
+      c *= 1.0 - 0.22 * (1.0 - smoothstep(EDGE, EDGE + 0.28, d)) * (1.0 - pm);
+      c = mix(c, dirt, pm);
+    }
   }
 
   // Rock on steep slopes; warmer, lighter rock up high.
@@ -136,7 +152,8 @@ vec3 terrainColor() {
 `;
 
 export function createTerrain(ground: GroundData): THREE.Mesh {
-  const material = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0 });
+  // Matte ground: Lambert lighting looks the same as fully-rough PBR here at a fraction of the cost.
+  const material = new THREE.MeshLambertMaterial();
   const uniforms: Record<string, THREE.IUniform> = {
     tWaterLevel: { value: TERRAIN.waterLevel },
     ...pathUniforms(),

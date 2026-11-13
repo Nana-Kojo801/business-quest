@@ -1,11 +1,40 @@
 import { describe, expect, it } from 'vitest';
-import { QualityManager, TIER_SETTINGS, initialTier, tierOverrides } from '../../src/render/quality';
+import { QualityManager, TIER_SETTINGS, frameCap, initialTier, tierOverrides } from '../../src/render/quality';
 
 const feed = (q: QualityManager, ms: number, totalMs: number) => {
   for (let t = 0; t < totalMs; t += ms) q.sample(ms);
 };
 
 describe('quality', () => {
+  it('starts weak computers lower, so they are not rebuilt (a visible freeze) on the way down', () => {
+    const p = new URLSearchParams('');
+    const intel = 'ANGLE (Intel Inc., Intel(R) UHD Graphics 617, OpenGL 4.1)';
+    expect(initialTier(p, false, { gpu: intel, memoryGB: 4 })).toBe('low');
+    expect(initialTier(p, false, { gpu: intel, memoryGB: 8 })).toBe('medium');
+    expect(initialTier(p, false, { gpu: 'Apple M1', memoryGB: 4 })).toBe('medium');
+    expect(initialTier(p, false, { gpu: 'ANGLE (NVIDIA GeForce RTX 3060)', memoryGB: 8 })).toBe('high');
+    expect(initialTier(p, false, {})).toBe('high');
+    expect(initialTier(p, true, { gpu: intel, memoryGB: 2 })).toBe('medium');
+    expect(initialTier(new URLSearchParams('quality=high'), false, { gpu: intel, memoryGB: 2 })).toBe('high');
+  });
+
+  it('reports the slowest frame, which the median hides', () => {
+    const q = new QualityManager('low', false);
+    for (let i = 0; i < 89; i++) q.sample(1000 / 60);
+    q.sample(120); // one hitch
+    feed(q, 1000 / 60, 100);
+    expect(q.state.fps).toBe(60);
+    expect(q.state.worstMs).toBe(120);
+  });
+
+  it('a frame cap counts as fast enough and never triggers a step down', () => {
+    expect(frameCap(new URLSearchParams('fps=30'))).toBe(30);
+    expect(frameCap(new URLSearchParams('fps=abc'))).toBe(0);
+    const q = new QualityManager('medium', true, {}, 30);
+    feed(q, 1000 / 30, 10000);
+    expect(q.state).toMatchObject({ tier: 'medium', scale: 1 });
+  });
+
   it('picks a starting tier from device type and URL', () => {
     expect(initialTier(new URLSearchParams(''), true)).toBe('medium');
     expect(initialTier(new URLSearchParams(''), false)).toBe('high');
@@ -23,11 +52,13 @@ describe('quality', () => {
     const q = new QualityManager('high', true);
     const changes: string[] = [];
     q.onChange = (s, tierChanged) => changes.push(tierChanged ? `tier:${s.tier}` : `scale:${s.scale.toFixed(1)}`);
-    feed(q, 40, 1600); // one evaluation at 25 fps
+    feed(q, 40, 1600); // one slow window at 25 fps: not enough on its own
+    expect(q.state.scale).toBe(1);
+    feed(q, 40, 1600); // a second slow window in a row steps down
     expect(q.state.scale).toBeCloseTo(0.9);
     while (q.state.scale > TIER_SETTINGS.high.minScale + 1e-6) feed(q, 40, 1600);
     expect(q.state.tier).toBe('high');
-    feed(q, 40, 1600);
+    feed(q, 40, 3200);
     expect(q.state.tier).toBe('medium');
     expect(q.state.scale).toBe(1);
     expect(changes).toContain('tier:medium');

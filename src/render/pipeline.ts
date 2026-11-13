@@ -47,6 +47,10 @@ export class Pipeline {
       radius: 0.75,
       levels: tier.bloomLevels,
     });
+    // Run the glow's passes at a fraction of the frame size (set per tier).
+    const bloomSetSize = this.bloom.setSize.bind(this.bloom);
+    this.bloom.setSize = (w: number, h: number) =>
+      bloomSetSize(Math.max(1, Math.round(w * this.tier.bloomScale)), Math.max(1, Math.round(h * this.tier.bloomScale)));
     this.finalPass = new EffectPass(
       camera,
       new SharpenEffect(0.4),

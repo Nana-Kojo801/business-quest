@@ -14,11 +14,20 @@ import { createLightShafts } from './ambient/LightShafts';
 import { createBirds } from './ambient/Birds';
 import { bakeGroundData, type GroundData } from './terrain/groundData';
 import { Pipeline } from './pipeline';
-import { QualityManager, initialTier, tierOverrides } from './quality';
+import { QualityManager, frameCap, initialTier, tierOverrides, type DeviceHints } from './quality';
 import { Atmosphere } from './sky/Atmosphere';
 import { presetFromParams } from './sky/presets';
 
 const FAR_AWAY = new THREE.Vector3(0, -1000, 0);
+
+/** GPU name and memory, where the browser shares them, for picking a starting tier. */
+function deviceHints(renderer: THREE.WebGLRenderer): DeviceHints {
+  const gl = renderer.getContext();
+  const ext = gl.getExtension('WEBGL_debug_renderer_info');
+  const gpu = ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : undefined;
+  const memoryGB = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+  return { gpu, memoryGB };
+}
 
 /**
  * Draws the world. Reads game state every frame and never changes it.
@@ -86,7 +95,12 @@ export class WorldView {
 
     const params = new URLSearchParams(location.search);
     const isTouch = matchMedia('(pointer: coarse)').matches;
-    this.quality = new QualityManager(initialTier(params, isTouch), params.get('adaptive') !== '0', tierOverrides(params));
+    this.quality = new QualityManager(
+      initialTier(params, isTouch, deviceHints(this.renderer)),
+      params.get('adaptive') !== '0',
+      tierOverrides(params),
+      frameCap(params),
+    );
 
     this.rig = new CameraRig(this.camera, params.get('cam') === 'close');
     this.atmosphere = new Atmosphere(this.scene);
@@ -170,7 +184,7 @@ export class WorldView {
       createField('flowers', tier.flowers, this.atmosphere, this.ground),
     ];
     for (const f of this.fields) this.scene.add(f.mesh);
-    this.trees = createTrees(this.atmosphere, { farCount: tier.farTrees, alphaToCoverage: tier.multisampling > 0 });
+    this.trees = createTrees(this.atmosphere, { farCount: tier.farTrees, leaves: tier.leaves, alphaToCoverage: tier.multisampling > 0 });
     this.rocks = createRocks(this.atmosphere, tier.pebbles);
     this.scene.add(this.trees.group, this.rocks.group);
     this.particles = createParticles(this.atmosphere, this.ground, tier.particles, () => this.renderer.getPixelRatio());

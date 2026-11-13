@@ -364,7 +364,9 @@ if (aLeaf.x > 0.0) {
   float ang = aLeaf.y * 6.2831853 + sin(uTime * 2.1 + aLeaf.y * 37.0) * 0.14;
   float ca = cos(ang), sa = sin(ang);
   vec2 cr = mat2(ca, sa, -sa, ca) * aCorner;
-  mvPosition.xy += cr * aLeaf.x * inst;
+  // Cards shrink away with distance (zero-size cards cost nothing to draw); the solid crown remains.
+  float keep = 1.0 - smoothstep(BQ_LEAF_FAR * 0.7, BQ_LEAF_FAR, -mvPosition.z);
+  mvPosition.xy += cr * aLeaf.x * inst * keep;
   // Nudge toward the camera so cards sit over the solid crown rather than cutting into it.
   mvPosition.z += aLeaf.x * inst * 0.35;
   gl_Position = projectionMatrix * mvPosition;
@@ -426,6 +428,8 @@ const BARK_FRAGMENT = /* glsl */ `
 
 export interface TreeSettings {
   farCount: number;
+  /** Leaf card density multiplier and the distance (m) at which cards shrink away. */
+  leaves: { density: number; far: number };
   /** Smooth leaf edges with alpha-to-coverage (only when the scene is multisampled). */
   alphaToCoverage: boolean;
 }
@@ -445,7 +449,8 @@ export function createTrees(atmosphere: Atmosphere, settings: TreeSettings) {
 
   const canopyMaterial = new THREE.MeshLambertMaterial({ vertexColors: true });
   canopyMaterial.alphaToCoverage = settings.alphaToCoverage;
-  if (settings.alphaToCoverage) canopyMaterial.defines = { BQ_A2C: '' };
+  canopyMaterial.defines = { BQ_LEAF_FAR: settings.leaves.far.toFixed(1) };
+  if (settings.alphaToCoverage) canopyMaterial.defines.BQ_A2C = '';
   canopyMaterial.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
@@ -457,7 +462,7 @@ export function createTrees(atmosphere: Atmosphere, settings: TreeSettings) {
       .replace('#include <color_fragment>', CANOPY_LEAVES)
       .replace('#include <emissivemap_fragment>', CANOPY_GLOW);
   };
-  canopyMaterial.customProgramCacheKey = () => 'bq-canopy' + (settings.alphaToCoverage ? '-a2c' : '');
+  canopyMaterial.customProgramCacheKey = () => `bq-canopy-${settings.leaves.far}` + (settings.alphaToCoverage ? '-a2c' : '');
   // Crowns are big: dissolve them sooner near the camera and in a wider cone toward it, so a
   // tree beside the lens never walls off the view.
   addFade(canopyMaterial, uniforms, { near: 2.8, cone: 3.5 });
@@ -487,8 +492,8 @@ export function createTrees(atmosphere: Atmosphere, settings: TreeSettings) {
     if (variant === 1) return pineGeometry(PALETTES.pine, 41, 6, 9, false);
     const r = rng(500 + variant);
     return variant === 2
-      ? crownGeometry(roundClumps(r, 1.18, -0.15), PALETTES.blossom, 26, 1, 3.4)
-      : crownGeometry(roundClumps(r, 1, 0), PALETTES.round, 0, 0, 3.0);
+      ? crownGeometry(roundClumps(r, 1.18, -0.15), PALETTES.blossom, 26, 1, 3.4 * settings.leaves.density)
+      : crownGeometry(roundClumps(r, 1, 0), PALETTES.round, 0, 0, 3.0 * settings.leaves.density);
   };
 
   // Valley trees: instanced per shape variant and per 32 m cell, so trees behind the camera

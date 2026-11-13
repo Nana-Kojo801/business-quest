@@ -1,4 +1,5 @@
 import { NPCS, Simulation, TERRAIN, TICK_DT, heightAt, interactTarget, pathMask, type PlayerId, type WorldState } from './core';
+import { frameCap } from './render/quality';
 import { AudioEngine } from './audio/AudioEngine';
 import { Input } from './input/devices';
 import { LocalController } from './input/controller';
@@ -284,7 +285,13 @@ export class Game {
     return this.pricing.isOpen;
   }
 
+  /** ?fps=30: draw every other display refresh, for an even cadence on slow machines. */
+  private readonly cap = frameCap(new URLSearchParams(location.search));
+  private lastDrawMs = 0;
+
   private frame(timeMs: number) {
+    if (this.cap && this.lastDrawMs && timeMs - this.lastDrawMs < 1000 / this.cap - 4) return;
+    this.lastDrawMs = timeMs;
     const now = timeMs / 1000;
     const dt = this.lastTime ? Math.min(now - this.lastTime, 0.25) : 0;
     this.lastTime = now;

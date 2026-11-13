@@ -37,8 +37,10 @@ No changes to core rules or rendering are needed for that.
 scene (HDR; MSAA on high) -> [painterly filter, high only] -> sharpen -> bloom -> tone mapping (Khronos Neutral) -> colour grade -> screen
 ```
 
-`src/render/quality.ts` picks a tier (phones start on medium, desktops on high), then lowers
-render resolution when frames are slow and drops a tier if that is not enough.
+`src/render/quality.ts` picks a tier (phones start on medium; computers on high, or lower when
+they report an Intel integrated GPU or 4 GB of memory or less), then lowers render resolution when
+frames stay slow for two measuring windows in a row, and drops a tier if that is not enough. A
+tier drop rebuilds the world (a visible freeze), which is why weak computers start lower.
 
 | Tier | Max pixel ratio | Painterly radius | MSAA | Shadows |
 |---|---|---|---|---|
@@ -54,7 +56,14 @@ brushwork in shaders); edges stay clean through the sharpen pass and alpha-sharp
 To measure costs on a device: `?dpr=1.5` (max pixel ratio) and `?msaa=0|4` override every tier.
 Check relative cost against the last build that held 60 fps before shipping visual changes.
 
-URL options: `?quality=low|medium|high`, `?adaptive=0`, `?debug=1` (fps overlay).
+URL options: `?quality=low|medium|high`, `?adaptive=0`, `?debug=1` (overlay: median fps, the
+slowest frame of the last window in ms, tier, resolution, pixel ratio), `?fps=30` (hold an even
+30 fps on slow machines, where an uneven 40-55 judders), `?dpr=`, `?msaa=`.
+
+Cost notes (CPU renderer, relative): the ground shader is the most expensive single item, so it
+only does path work near paths (per-vertex rough distance) and close-up texture work up close,
+and uses Lambert lighting (it is fully matte). Glow passes run at half resolution on low and
+medium (`bloomScale`). Leaf cards shrink away beyond `leaves.far` (26 m low, 36 m medium).
 
 ## Sky, light and fog
 
