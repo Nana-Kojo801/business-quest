@@ -57,7 +57,7 @@ function bodyBlobs(look: Look, b: FigureBones) {
     { kind: 'ellipsoid', a: V(0, hip.y + 0.16, 0), r: V(0.124 * w, 0.115, 0.09), k: 0.07, bone: b.torso },
   ];
   const shoulders: Blob[] = sh.map((p) => ({ kind: 'ellipsoid', a: V(p.x * 0.86, p.y - 0.012, 0), r: V(0.062, 0.055, 0.06), k: 0.06, bone: b.torso }) as Blob);
-  const neck: Blob = { kind: 'capsule', a: V(0, hip.y + 0.42, 0), b: V(0, hip.y + 0.58, 0.006), r: 0.047, rb: 0.042, k: 0.05, bone: b.torso };
+  const neck: Blob = { kind: 'capsule', a: V(0, hip.y + 0.42, 0), b: V(0, hip.y + 0.58, 0.01), r: 0.05, rb: 0.046, k: 0.05, bone: b.torso };
   const pelvis: Blob = { kind: 'ellipsoid', a: V(0, hip.y + 0.01, 0), r: V(0.138 * w, 0.1, 0.095), k: 0.06, bone: b.hips };
   const uppers: Blob[] = sh.map((p, i) => ({ kind: 'capsule', a: V(p.x, p.y - 0.005, 0), b: V(el[i].x * 1.02, el[i].y + 0.01, 0), r: 0.051, rb: 0.043, k: 0.03, bone: b.uppers[i] }) as Blob);
   const fores: Blob[] = el.map((p, i) => ({ kind: 'capsule', a: V(p.x * 1.02, p.y - 0.005, 0), b: V(p.x * 1.02, p.y - 0.18, 0.008), r: 0.043, rb: 0.034, k: 0.022, bone: b.fores[i] }) as Blob);
@@ -166,9 +166,50 @@ export function figureMantle(look: Look, b: FigureBones): Part[] {
   return out;
 }
 
-/** The sculpted head (cranium, full cheeks, a soft chin, a small nose, ears) as a field around C (head space). */
-export function headField(C: THREE.Vector3, R: number) {
+/**
+ * A natural head: cranium, a face mass with cheekbones and a defined jaw and chin, a
+ * gentle brow ridge over shallow eye sockets, a nose with bridge, tip and wings, lips,
+ * and ears level with the eyes and nose. Positions scale with R.
+ */
+function naturalHeadBlobs(C: THREE.Vector3, R: number, bone: THREE.Object3D): Blob[] {
+  const s = R / 0.15;
+  const P = (x: number, y: number, z: number) => V(C.x + x * s, C.y + y * s, C.z + z * s);
+  const E = (x: number, y: number, z: number) => V(x * s, y * s, z * s);
+  const b: Blob[] = [
+    { kind: 'ellipsoid', a: P(0, 0.016, -0.01), r: E(0.13, 0.148, 0.15), k: 0, bone },
+    // Face mass, then a slim jaw and a defined chin.
+    { kind: 'ellipsoid', a: P(0, -0.04, 0.052), r: E(0.078, 0.09, 0.08), k: 0.045, bone },
+    { kind: 'ellipsoid', a: P(-0.048, -0.082, 0.03), r: E(0.032, 0.036, 0.05), k: 0.035, bone },
+    { kind: 'ellipsoid', a: P(0.048, -0.082, 0.03), r: E(0.032, 0.036, 0.05), k: 0.035, bone },
+    { kind: 'ellipsoid', a: P(0, -0.124, 0.08), r: E(0.027, 0.025, 0.026), k: 0.035, bone },
+    // Cheekbones and a gentle brow ridge.
+    { kind: 'ellipsoid', a: P(-0.05, -0.022, 0.092), r: E(0.03, 0.02, 0.026), k: 0.03, bone },
+    { kind: 'ellipsoid', a: P(0.05, -0.022, 0.092), r: E(0.03, 0.02, 0.026), k: 0.03, bone },
+    { kind: 'ellipsoid', a: P(0, 0.034, 0.112), r: E(0.074, 0.018, 0.024), k: 0.03, bone },
+    // Shallow eye sockets.
+    { kind: 'ellipsoid', a: P(-0.042, 0.004, 0.142), r: E(0.024, 0.014, 0.016), k: 0.02, bone, carve: true },
+    { kind: 'ellipsoid', a: P(0.042, 0.004, 0.142), r: E(0.024, 0.014, 0.016), k: 0.02, bone, carve: true },
+    // Nose: bridge, tip, wings.
+    { kind: 'capsule', a: P(0, 0.004, 0.128), b: P(0, -0.04, 0.143), r: 0.006 * s, rb: 0.0095 * s, k: 0.02, bone },
+    { kind: 'ellipsoid', a: P(0, -0.044, 0.143), r: E(0.011, 0.0095, 0.0095), k: 0.016, bone },
+    { kind: 'ellipsoid', a: P(-0.01, -0.048, 0.136), r: E(0.007, 0.006, 0.007), k: 0.012, bone },
+    { kind: 'ellipsoid', a: P(0.01, -0.048, 0.136), r: E(0.007, 0.006, 0.007), k: 0.012, bone },
+    // Lips: a gentle fullness, not a ridge.
+    { kind: 'ellipsoid', a: P(0, -0.071, 0.126), r: E(0.027, 0.013, 0.013), k: 0.026, bone },
+    // Ears, level with the eyes and nose.
+    { kind: 'ellipsoid', a: P(-0.13, -0.022, -0.004), r: E(0.012, 0.031, 0.022), k: 0.016, bone },
+    { kind: 'ellipsoid', a: P(0.13, -0.022, -0.004), r: E(0.012, 0.031, 0.022), k: 0.016, bone },
+  ];
+  return b;
+}
+
+/** The sculpted head as a field around C (head space). */
+export function headField(C: THREE.Vector3, R: number, natural = false) {
   const bone = new THREE.Object3D();
+  if (natural) {
+    const blobs = naturalHeadBlobs(C, R, bone);
+    return { field: blend(blobs), blobs };
+  }
   const blobs: Blob[] = [
     { kind: 'ellipsoid', a: V(C.x, C.y + 0.012, C.z - 0.01), r: V(R * 1.0, R * 0.97, R * 0.98), k: 0, bone },
     { kind: 'ellipsoid', a: V(C.x - 0.056, C.y - 0.062, C.z + 0.058), r: V(0.068, 0.062, 0.066), k: 0.06, bone },
@@ -183,9 +224,11 @@ export function headField(C: THREE.Vector3, R: number) {
 
 /** Skull mesh (head space) from the sculpted head field. */
 export function sculptedSkull(C: THREE.Vector3, R: number, look: Look): Part {
-  const { field, blobs } = headField(C, R);
-  const g = surfaceNets(field, bounds(blobs, 0.03), detail.crowd ? 0.009 : 0.0062);
-  faceNormals(g, C, R);
+  const natural = look.faceStyle === 'natural';
+  const { field, blobs } = headField(C, R, natural);
+  const g = surfaceNets(field, bounds(blobs, 0.03), detail.crowd ? 0.008 : natural ? 0.0045 : 0.0062);
+  // Stylized faces are lit as one soft plane; natural faces keep their real shape in the light.
+  if (!natural) faceNormals(g, C, R);
   return { geo: g, color: look.skin, mat: Mat.Skin };
 }
 
@@ -194,8 +237,8 @@ export function sculptedSkull(C: THREE.Vector3, R: number, look: Look): Part {
  * the sculpted surface (so the face wraps the cheeks and nose), with the same angular
  * layout as the face atlas.
  */
-export function sculptedFacePatch(C: THREE.Vector3, R: number, phiLen: number, thetaTop: number, thetaLen: number, U = 34, Vn = 22) {
-  const { field } = headField(C, R);
+export function sculptedFacePatch(C: THREE.Vector3, R: number, phiLen: number, thetaTop: number, thetaLen: number, natural = false, U = 44, Vn = 30) {
+  const { field } = headField(C, R, natural);
   const pos: number[] = [];
   const uv: number[] = [];
   const idx: number[] = [];

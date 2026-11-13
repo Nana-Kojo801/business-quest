@@ -113,6 +113,13 @@ const SHADING = /* glsl */ `
   else if (m == 3) tint = vec3(0.9, 0.85, 1.0);
   else if (m == 4) tint = vec3(0.98, 0.92, 1.12);
   outgoingLight += reflectedLight.indirectDiffuse * (tint - 1.0) * (1.0 - lit);
+  // Skin: soft, gradual light instead of a hard two-tone step, so faces keep their shape.
+  if (m == 0) {
+    float ndl = dot(normal, uSunDirView);
+    vec3 softDirect = diffuseColor.rgb * uSunCol * smoothstep(-0.3, 0.8, ndl) * 0.9;
+    outgoingLight += (softDirect - reflectedLight.directDiffuse) * 0.75;
+    lit = mix(lit, smoothstep(-0.3, 0.8, ndl), 0.75);
+  }
   // A warm band where light turns to shadow on skin (light scattering in skin).
   if (m == 0) outgoingLight += diffuseColor.rgb * vec3(0.16, 0.04, 0.02) * (1.0 - abs(lit * 2.0 - 1.0)) * length(uSunCol) * 0.25;
 
@@ -135,7 +142,8 @@ const SHADING = /* glsl */ `
 
   // Rim light from the sun on the silhouette.
   float facing = clamp(dot(normal, V), 0.0, 1.0);
-  outgoingLight += uRim * smoothstep(0.55, 0.78, 1.0 - facing) * diffuseColor.rgb * (m == 3 ? 1.6 : 1.0);
+  // (Skin gets only a little: on a sculpted face it would streak across the nose and lips.)
+  outgoingLight += uRim * smoothstep(0.55, 0.78, 1.0 - facing) * diffuseColor.rgb * (m == 3 ? 1.6 : m == 0 ? 0.25 : 1.0);
 }
 `;
 

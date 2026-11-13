@@ -65,7 +65,7 @@ export interface FaceStyle {
   /** Narrower, gentler eyes for older characters. */
   calm?: boolean;
   /** Drawing style: anime (big glossy eyes), storybook (round, simple), soft (gentle almond eyes). */
-  style?: 'anime' | 'storybook' | 'soft';
+  style?: 'anime' | 'storybook' | 'soft' | 'natural';
   /** Draw a little nose mark (heads without a sculpted nose). */
   noseMark?: boolean;
 }
@@ -329,7 +329,228 @@ function drawStorybookBrow(g: G, s: FaceStyle, o: number, lift: number, tilt: nu
   g.restore();
 }
 
+
+// --- Natural style: lifelike proportions, lined up with the sculpted head's features. ---
+const N_EYE_X = 0.29; // radians from centre (the sculpted eye sockets)
+const N_EYE_Y = -0.02;
+
+/** Almond eye outline: upper lid arches highest a little inside the middle, lower lid flatter. */
+function naturalEyePath(g: G, ew: number, up: number, down: number, o: number) {
+  g.beginPath();
+  g.moveTo(-ew * o, 1); // inner corner (toward the nose)
+  g.bezierCurveTo(-ew * 0.55 * o, -up * 1.15, ew * 0.45 * o, -up * 1.1, ew * o, -up * 0.05);
+  g.bezierCurveTo(ew * 0.55 * o, down * 1.05, -ew * 0.45 * o, down * 1.1, -ew * o, 1);
+  g.closePath();
+}
+
+function drawNaturalEye(g: G, s: FaceStyle, o: number, state: Eyes) {
+  const lash = s.lash ?? '#2b1b1e';
+  // A little larger than life (as animated films do), keeping a natural almond shape.
+  const ew = 49;
+  const lid = 'rgba(110, 55, 50, 0.55)';
+  if (state === Eyes.Closed || state === Eyes.Happy) {
+    // Closed lids: the lash line curves down (relaxed) or up (smiling eyes, cheeks raised).
+    g.strokeStyle = lash;
+    g.lineCap = 'round';
+    g.lineWidth = 4.5;
+    g.beginPath();
+    const c = state === Eyes.Happy ? -9 : 7;
+    g.moveTo(-ew * o, 0);
+    g.quadraticCurveTo(0, c, ew * o, state === Eyes.Happy ? -2 : 2);
+    g.stroke();
+    g.strokeStyle = lid;
+    g.lineWidth = 2;
+    g.beginPath();
+    g.moveTo(-ew * 0.7 * o, c - 9);
+    g.quadraticCurveTo(0, c - 15, ew * 0.8 * o, c - 7);
+    g.stroke();
+    return;
+  }
+  let up = 22;
+  let down = 13;
+  let look = 0;
+  let irisR = 20;
+  if (state === Eyes.Wide) { up = 26; down = 15; irisR = 17; }
+  if (state === Eyes.Worried) { up = 16; }
+  if (state === Eyes.Thinking) { up = 11; look = 0.3; }
+  g.save();
+  if (state === Eyes.Worried) g.rotate(o * 0.08);
+  // White of the eye, with a soft shadow under the upper lid.
+  naturalEyePath(g, ew, up, down, o);
+  g.fillStyle = '#f6eee8';
+  g.fill();
+  g.save();
+  naturalEyePath(g, ew, up, down, o);
+  g.clip();
+  // Iris: a deeper rim, lighter toward the pupil; mostly covered top and bottom by the lids.
+  const col = new THREE.Color(s.iris);
+  const cx = look * ew * o * (o > 0 ? 1 : -1) + o * 1.5;
+  const cy = 0.5;
+  const rg = g.createRadialGradient(cx, cy, irisR * 0.2, cx, cy, irisR);
+  rg.addColorStop(0, col.clone().lerp(new THREE.Color('#ffffff'), 0.25).getStyle());
+  rg.addColorStop(0.65, col.getStyle());
+  rg.addColorStop(1, col.clone().multiplyScalar(0.4).getStyle());
+  g.fillStyle = rg;
+  g.beginPath();
+  g.arc(cx, cy, irisR, 0, Math.PI * 2);
+  g.fill();
+  g.strokeStyle = col.clone().multiplyScalar(0.3).getStyle();
+  g.lineWidth = 1.8;
+  g.stroke();
+  g.fillStyle = '#120a0c';
+  g.beginPath();
+  g.arc(cx, cy, irisR * 0.42, 0, Math.PI * 2);
+  g.fill();
+  // Lid shadow and one small catchlight.
+  g.fillStyle = 'rgba(70, 30, 30, 0.28)';
+  g.fillRect(-ew * 1.2, -up * 1.3, ew * 2.4, up * 0.75);
+  g.fillStyle = 'rgba(255, 255, 255, 0.95)';
+  g.beginPath();
+  g.arc(cx - irisR * 0.38, cy - irisR * 0.38, irisR * 0.2, 0, Math.PI * 2);
+  g.fill();
+  g.restore();
+  // Upper lash line: thicker toward the outer corner, with a few short lashes.
+  g.strokeStyle = lash;
+  g.lineCap = 'round';
+  g.lineWidth = 3.6;
+  g.beginPath();
+  g.moveTo(-ew * o, 1);
+  g.bezierCurveTo(-ew * 0.55 * o, -up * 1.15, ew * 0.45 * o, -up * 1.1, ew * o, -up * 0.05);
+  g.stroke();
+  g.lineWidth = 2.2;
+  for (const t of [0.55, 0.72, 0.88]) {
+    const x = (t * 2 - 1) * ew * o;
+    const y = -up * (1 - t * t) * 0.95 - up * 0.1;
+    g.beginPath();
+    g.moveTo(x, y);
+    g.lineTo(x + o * 5, y - 5);
+    g.stroke();
+  }
+  // Lower lid: a fine soft line, and the pink inner corner.
+  g.strokeStyle = 'rgba(90, 45, 45, 0.45)';
+  g.lineWidth = 1.6;
+  g.beginPath();
+  g.moveTo(-ew * 0.7 * o, down * 0.7);
+  g.bezierCurveTo(-ew * 0.3 * o, down * 1.15, ew * 0.45 * o, down * 1.05, ew * 0.95 * o, 1);
+  g.stroke();
+  g.fillStyle = 'rgba(220, 120, 120, 0.6)';
+  g.beginPath();
+  g.ellipse(-ew * 0.93 * o, 1.5, 3, 2.4, 0, 0, Math.PI * 2);
+  g.fill();
+  // Eyelid crease.
+  g.strokeStyle = lid;
+  g.lineWidth = 1.8;
+  g.beginPath();
+  g.moveTo(-ew * 0.6 * o, -up - 6);
+  g.quadraticCurveTo(ew * 0.1 * o, -up - 11, ew * 0.9 * o, -up * 0.4 - 6);
+  g.stroke();
+  g.restore();
+}
+
+/** Natural brows: a tapered shape (fuller at the inner end) with fine hair strokes. */
+function drawNaturalBrow(g: G, s: FaceStyle, o: number, lift: number, tilt: number) {
+  g.save();
+  g.translate(0, -lift);
+  g.rotate(-tilt * o * 0.22);
+  g.fillStyle = s.brow;
+  g.globalAlpha = 0.9;
+  g.beginPath();
+  g.moveTo(-o * 34, 5);
+  g.quadraticCurveTo(-o * 6, -8, o * 34, 0);
+  g.quadraticCurveTo(-o * 4, 1, -o * 34, 12);
+  g.closePath();
+  g.fill();
+  g.globalAlpha = 0.6;
+  g.strokeStyle = s.brow;
+  g.lineWidth = 1.2;
+  for (let i = 0; i < 9; i++) {
+    const x = -o * 28 + o * i * 6.5;
+    const y = 6 - Math.sin((i / 8) * Math.PI) * 7;
+    g.beginPath();
+    g.moveTo(x, y + 2);
+    g.lineTo(x + o * 5, y - 2);
+    g.stroke();
+  }
+  g.restore();
+}
+
+function drawNaturalEyes(g: G, s: FaceStyle, state: Eyes) {
+  for (const side of [-1, 1]) {
+    const [ex, ey] = at(side * N_EYE_X, N_EYE_Y);
+    const [bx, by] = at(side * 0.3, -0.165);
+    g.save();
+    g.translate(ex, ey);
+    drawNaturalEye(g, s, side, state);
+    g.restore();
+    g.save();
+    g.translate(bx, by);
+    const lift = state === Eyes.Wide ? 9 : state === Eyes.Happy ? 3 : state === Eyes.Thinking && side > 0 ? 7 : 0;
+    const tilt = state === Eyes.Worried ? 1 : state === Eyes.Thinking && side < 0 ? -0.5 : 0;
+    drawNaturalBrow(g, s, side, lift, tilt);
+    g.restore();
+  }
+}
+
+/** Natural mouths: lips rather than a line (cell centre lined up with the sculpted lips). */
+function drawNaturalMouth(g: G, shape: Mouth) {
+  const cx = 64;
+  const cy = 43;
+  const line = '#8a4048';
+  const lip = 'rgba(205, 110, 115, 0.55)';
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+  const lowerLip = (w: number, y: number) => {
+    g.fillStyle = lip;
+    g.beginPath();
+    g.ellipse(cx, y + 5, w * 0.62, 4.5, 0, 0, Math.PI * 2);
+    g.fill();
+  };
+  const closed = (w: number, curve: number, tilt = 0) => {
+    lowerLip(w, cy);
+    g.strokeStyle = line;
+    g.lineWidth = 2.6;
+    g.beginPath();
+    g.moveTo(cx - w, cy - curve + tilt);
+    g.quadraticCurveTo(cx, cy + curve * 0.6, cx + w, cy - curve - tilt);
+    g.stroke();
+  };
+  const open = (w: number, h: number, curve: number, teeth: boolean) => {
+    g.fillStyle = '#5a1e26';
+    g.beginPath();
+    g.moveTo(cx - w, cy - curve);
+    g.quadraticCurveTo(cx, cy - curve - 2, cx + w, cy - curve);
+    g.quadraticCurveTo(cx, cy + h, cx - w, cy - curve);
+    g.closePath();
+    g.fill();
+    if (teeth) {
+      g.save();
+      g.clip();
+      g.fillStyle = '#f6f0ea';
+      g.fillRect(cx - w, cy - curve - 4, w * 2, 6);
+      g.restore();
+    }
+    g.strokeStyle = line;
+    g.lineWidth = 2.2;
+    g.stroke();
+    lowerLip(w, cy + h * 0.55);
+  };
+  switch (shape) {
+    case Mouth.Soft: closed(19, 1.5); break;
+    case Mouth.Smile: closed(21, 6); break;
+    case Mouth.Laugh: open(19, 13, 4, true); break;
+    case Mouth.O: g.fillStyle = '#5a1e26'; g.beginPath(); g.ellipse(cx, cy + 2, 6.5, 8, 0, 0, Math.PI * 2); g.fill(); g.strokeStyle = line; g.lineWidth = 2.2; g.stroke(); break;
+    case Mouth.Wavy: closed(15, -3); break;
+    case Mouth.Hmm: closed(14, 1, 3); break;
+    case Mouth.TalkMid: open(14, 7, 1, true); break;
+    case Mouth.TalkWide: open(16, 11, 2, true); break;
+  }
+}
+
 function drawEyes(g: G, s: FaceStyle, state: Eyes) {
+  if (s.style === 'natural') {
+    drawNaturalEyes(g, s, state);
+    return;
+  }
   if (s.style === 'storybook') {
     for (const side of [-1, 1]) {
       const [ex, ey] = at(side * 0.33, EYE_Y + 0.02);
@@ -376,6 +597,20 @@ function drawEyes(g: G, s: FaceStyle, state: Eyes) {
 
 /** Cheeks and nose: the fixed lower-face layer. */
 function drawLower(g: G, s: FaceStyle) {
+  if (s.style === 'natural') {
+    // Just a faint warmth over the cheekbones.
+    for (const side of [-1, 1]) {
+      const [cx, cy] = at(side * 0.5, 0.2);
+      const bl = g.createRadialGradient(cx, cy, 2, cx, cy, 40);
+      bl.addColorStop(0, 'rgba(240, 120, 120, 0.16)');
+      bl.addColorStop(1, 'rgba(240, 120, 120, 0)');
+      g.fillStyle = bl;
+      g.beginPath();
+      g.ellipse(cx, cy, 44, 26, 0, 0, Math.PI * 2);
+      g.fill();
+    }
+    return;
+  }
   for (const side of [-1, 1]) {
     const [cx, cy] = at(side * 0.5, 0.36);
     const bl = g.createRadialGradient(cx, cy, 2, cx, cy, 32);
@@ -522,7 +757,8 @@ export function faceAtlas(style: FaceStyle, scale = 1): THREE.CanvasTexture {
     g.rect(x, y, MOUTH_BOX.w, MOUTH_BOX.h);
     g.clip();
     g.translate(x, y);
-    drawMouth(g, i as Mouth);
+    if (style.style === 'natural') drawNaturalMouth(g, i as Mouth);
+    else drawMouth(g, i as Mouth);
     g.restore();
   }
   const tex = new THREE.CanvasTexture(canvas);

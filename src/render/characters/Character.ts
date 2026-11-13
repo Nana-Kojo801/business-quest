@@ -232,7 +232,8 @@ export class Character {
     // Head: shaped skull, ears, hat, layered hair, and the drawn face.
     this.head.position.y = 0.545;
     this.torso.add(this.head);
-    const R = 0.163;
+    // A natural face sits on a slightly smaller, more lifelike head.
+    const R = look.faceStyle === 'natural' ? 0.15 : 0.163;
     const C = V(0, R * 0.95, 0);
     bone(this.head, headParts(look, C, R, !sculptedShape));
     if (sculptedShape) {
@@ -264,7 +265,7 @@ export class Character {
     atmosphere.patchMaterial(face.material);
     let fg: THREE.BufferGeometry;
     if (sculptedShape) {
-      fg = sculptedFacePatch(C, R, FACE_PHI_LEN, FACE_THETA_TOP, FACE_THETA_LEN);
+      fg = sculptedFacePatch(C, R, FACE_PHI_LEN, FACE_THETA_TOP, FACE_THETA_LEN, look.faceStyle === 'natural');
     } else {
       fg = new THREE.SphereGeometry(R * 1.006, options.crowd ? 16 : 24, options.crowd ? 10 : 14, Math.PI / 2 - FACE_PHI_LEN / 2, FACE_PHI_LEN, Math.PI / 2 - FACE_THETA_TOP, FACE_THETA_LEN);
       // Sphere uv runs the other way round from our canvas layout; mirror u.
