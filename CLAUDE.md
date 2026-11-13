@@ -9,8 +9,8 @@ of done.
 - **Phase 0 (visual test slice) is complete** (issues #1–#14 closed). Owner decision: everything
   stays **code-built** (characters too), no paid AI asset tools; raise quality to "premium but
   handcrafted" (see `docs/DECISIONS.md`).
-- **Phase 1 starts with three quality passes, in this order:** #41 world, #40 characters,
-  #39 UI. Then #15 (curriculum check against Ashesi's catalog → `CURRICULUM.md`), #16 design doc,
+- **Phase 1 starts with three quality passes, in this order:** #41 world (**done**, signed off
+  2026-11-13), #40 characters (**next**), #39 UI. Then #15 (curriculum check against Ashesi's catalog → `CURRICULUM.md`), #16 design doc,
   and on through #24. Regions are tracking issues #25–#35, split into issues when each starts.
 - The live build: https://nana-kojo801.github.io/business-quest/
 
