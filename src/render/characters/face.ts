@@ -65,7 +65,7 @@ export interface FaceStyle {
   /** Narrower, gentler eyes for older characters. */
   calm?: boolean;
   /** Drawing style: anime (big glossy eyes), storybook (round, simple), soft (gentle almond eyes). */
-  style?: 'anime' | 'storybook' | 'soft' | 'natural';
+  style?: 'anime' | 'storybook' | 'soft' | 'natural' | 'cel';
   /** Draw a little nose mark (heads without a sculpted nose). */
   noseMark?: boolean;
 }
@@ -546,7 +546,228 @@ function drawNaturalMouth(g: G, shape: Mouth) {
   }
 }
 
+// --- Cel style: detailed anime eyes in the spirit of modern 3D anime games (original design). ---
+function celEyePath(g: G, ew: number, eh: number, o: number) {
+  g.beginPath();
+  g.moveTo(-ew * o, eh * 0.05); // inner corner
+  g.bezierCurveTo(-ew * 0.8 * o, -eh * 0.75, ew * 0.25 * o, -eh * 1.12, ew * o, -eh * 0.3); // upper lid, peaking a little outside the middle
+  g.bezierCurveTo(ew * 0.88 * o, eh * 0.62, -ew * 0.45 * o, eh * 0.9, -ew * o, eh * 0.05); // lower lid
+  g.closePath();
+}
+
+function drawCelEye(g: G, s: FaceStyle, o: number, state: Eyes) {
+  const lash = s.lash ?? '#25161c';
+  const warm = new THREE.Color(lash).lerp(new THREE.Color('#b2554e'), 0.7).getStyle();
+  const ew = 60;
+  let eh = s.calm ? 40 : 50;
+  if (state === Eyes.Closed || state === Eyes.Happy) {
+    g.strokeStyle = lash;
+    g.lineCap = 'round';
+    g.lineWidth = 7;
+    g.beginPath();
+    if (state === Eyes.Happy) {
+      g.moveTo(-ew * 0.95 * o, 6);
+      g.quadraticCurveTo(0, -30, ew * 0.95 * o, 4);
+    } else {
+      g.moveTo(-ew * 0.95 * o, -2);
+      g.quadraticCurveTo(0, 20, ew * 0.98 * o, -4);
+      g.lineTo(ew * 1.2 * o, -12);
+    }
+    g.stroke();
+    return;
+  }
+  let open = 1;
+  let look = 0;
+  let irisScale = 1;
+  if (state === Eyes.Wide) { eh *= 1.12; irisScale = 0.84; }
+  if (state === Eyes.Worried) open = 0.92;
+  if (state === Eyes.Thinking) { open = 0.6; look = 0.22; }
+  g.save();
+  if (state === Eyes.Worried) g.rotate(o * 0.1);
+  // White, with a cool shadow under the upper lid.
+  celEyePath(g, ew, eh, o);
+  g.fillStyle = '#fdf9f7';
+  g.fill();
+  g.save();
+  celEyePath(g, ew, eh, o);
+  g.clip();
+  const lidShade = g.createLinearGradient(0, -eh, 0, eh * 0.2);
+  lidShade.addColorStop(0, 'rgba(90, 70, 130, 0.42)');
+  lidShade.addColorStop(1, 'rgba(90, 70, 130, 0)');
+  g.fillStyle = lidShade;
+  g.fillRect(-ew * 1.2, -eh * 1.2, ew * 2.4, eh * 1.4);
+  // Iris: dark at the top, glowing toward the bottom; inner ring, pupil, a bright lower crescent.
+  const col = new THREE.Color(s.iris);
+  const ix = look * ew * o - o * 3;
+  const iy = eh * 0.12;
+  const rx = ew * 0.5 * irisScale;
+  const ry = eh * 0.92 * irisScale;
+  const grad = g.createLinearGradient(0, iy - ry, 0, iy + ry);
+  grad.addColorStop(0, col.clone().multiplyScalar(0.2).getStyle());
+  grad.addColorStop(0.35, col.clone().multiplyScalar(0.62).getStyle());
+  grad.addColorStop(0.72, col.getStyle());
+  grad.addColorStop(1, col.clone().lerp(new THREE.Color('#ffffff'), 0.5).getStyle());
+  g.fillStyle = grad;
+  g.beginPath();
+  g.ellipse(ix, iy, rx, ry, 0, 0, Math.PI * 2);
+  g.fill();
+  g.strokeStyle = col.clone().lerp(new THREE.Color('#ffffff'), 0.35).getStyle();
+  g.globalAlpha = 0.45;
+  g.lineWidth = 2;
+  g.beginPath();
+  g.ellipse(ix, iy, rx * 0.64, ry * 0.64, 0, 0, Math.PI * 2);
+  g.stroke();
+  g.globalAlpha = 0.75;
+  g.strokeStyle = col.clone().lerp(new THREE.Color('#ffffff'), 0.7).getStyle();
+  g.lineWidth = 5;
+  g.beginPath();
+  g.ellipse(ix, iy + ry * 0.08, rx * 0.72, ry * 0.7, 0, 0.2 * Math.PI, 0.8 * Math.PI);
+  g.stroke();
+  g.globalAlpha = 1;
+  g.fillStyle = '#150c17';
+  g.beginPath();
+  g.ellipse(ix, iy - ry * 0.04, rx * 0.34, ry * 0.42, 0, 0, Math.PI * 2);
+  g.fill();
+  g.strokeStyle = col.clone().multiplyScalar(0.22).getStyle();
+  g.lineWidth = 3;
+  g.beginPath();
+  g.ellipse(ix, iy, rx, ry, 0, 0, Math.PI * 2);
+  g.stroke();
+  // Catchlights: a big soft one, a small one, a sparkle.
+  g.fillStyle = 'rgba(255, 255, 255, 0.96)';
+  g.beginPath();
+  g.ellipse(ix - o * rx * 0.3, iy - ry * 0.42, rx * 0.4, ry * 0.22, -0.45 * o, 0, Math.PI * 2);
+  g.fill();
+  g.beginPath();
+  g.arc(ix + o * rx * 0.4, iy + ry * 0.36, rx * 0.12, 0, Math.PI * 2);
+  g.fill();
+  g.globalAlpha = 0.8;
+  g.beginPath();
+  g.arc(ix - o * rx * 0.05, iy + ry * 0.12, rx * 0.06, 0, Math.PI * 2);
+  g.fill();
+  g.globalAlpha = 1;
+  g.restore();
+  // Partly shut: erase above the lid line.
+  const lidY = -eh * 1.0 + (1 - open) * eh * 1.1;
+  if (open < 0.99) {
+    g.save();
+    g.globalCompositeOperation = 'destination-out';
+    g.beginPath();
+    g.moveTo(-ew * 1.6 * o, eh * 0.05);
+    g.bezierCurveTo(-ew * 0.8 * o, lidY + eh * 0.2, ew * 0.25 * o, lidY - eh * 0.05, ew * 1.6 * o, -eh * 0.3 + (1 - open) * eh * 0.3);
+    g.lineTo(ew * 1.6 * o, -eh * 2.5);
+    g.lineTo(-ew * 1.6 * o, -eh * 2.5);
+    g.closePath();
+    g.fill();
+    g.restore();
+  }
+  // Upper lash line: thickening toward a winged outer corner, with two lash clumps.
+  const ly = (k: number) => lidY + (1 - open) * 0 + k;
+  g.fillStyle = lash;
+  g.beginPath();
+  g.moveTo(-ew * 1.02 * o, eh * 0.05);
+  g.bezierCurveTo(-ew * 0.8 * o, ly(eh * 0.2), ew * 0.25 * o, ly(-eh * 0.12), ew * 1.04 * o, -eh * 0.32);
+  g.lineTo(ew * 1.3 * o, -eh * 0.5); // wing
+  g.lineTo(ew * 1.08 * o, -eh * 0.2);
+  g.bezierCurveTo(ew * 0.25 * o, ly(eh * 0.06), -ew * 0.78 * o, ly(eh * 0.36), -ew * 1.02 * o, eh * 0.05);
+  g.closePath();
+  g.fill();
+  // Double-eyelid crease.
+  g.strokeStyle = warm;
+  g.globalAlpha = 0.5;
+  g.lineWidth = 2.2;
+  g.beginPath();
+  g.moveTo(-ew * 0.5 * o, ly(-eh * 0.12));
+  g.quadraticCurveTo(ew * 0.25 * o, ly(-eh * 0.34), ew * 0.95 * o, -eh * 0.62);
+  g.stroke();
+  // Lower lash line: warm, along the outer part of the lower lid.
+  g.globalAlpha = 0.85;
+  g.lineWidth = 2.6;
+  g.beginPath();
+  g.moveTo(ew * 0.98 * o, -eh * 0.22);
+  g.bezierCurveTo(ew * 0.82 * o, eh * 0.58, ew * 0.1 * o, eh * 0.84, -ew * 0.3 * o, eh * 0.72);
+  g.stroke();
+  g.globalAlpha = 1;
+  g.restore();
+}
+
+function drawCelBrow(g: G, s: FaceStyle, o: number, lift: number, tilt: number) {
+  g.save();
+  g.translate(0, -lift);
+  g.rotate(-tilt * o * 0.25);
+  g.fillStyle = s.brow;
+  g.beginPath();
+  g.moveTo(-o * 34, 7);
+  g.quadraticCurveTo(o * 4, -9, o * 38, 3);
+  g.quadraticCurveTo(o * 4, -3, -o * 34, 12);
+  g.closePath();
+  g.fill();
+  g.restore();
+}
+
+function drawCelEyes(g: G, s: FaceStyle, state: Eyes) {
+  for (const side of [-1, 1]) {
+    const [ex, ey] = at(side * 0.34, 0.08);
+    const [bx, by] = at(side * 0.35, -0.22);
+    g.save();
+    g.translate(ex, ey);
+    drawCelEye(g, s, side, state);
+    g.restore();
+    g.save();
+    g.translate(bx, by);
+    const lift = state === Eyes.Wide ? 12 : state === Eyes.Happy ? 5 : state === Eyes.Thinking && side > 0 ? 9 : 0;
+    const tilt = state === Eyes.Worried ? 1 : state === Eyes.Thinking && side < 0 ? -0.5 : 0;
+    drawCelBrow(g, s, side, lift, tilt);
+    g.restore();
+  }
+}
+
+/** Cel mouths: clean anime shapes (a D-shaped laugh, simple lines). */
+function drawCelMouth(g: G, shape: Mouth) {
+  const cx = 64;
+  const cy = 28;
+  const line = '#7a2f3a';
+  const inside = '#6a2430';
+  const tongue = '#e07a80';
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+  g.strokeStyle = line;
+  g.lineWidth = 3.2;
+  const dShape = (w: number, h: number) => {
+    g.beginPath();
+    g.moveTo(cx - w, cy - 2);
+    g.lineTo(cx + w, cy - 2);
+    g.quadraticCurveTo(cx + w * 0.9, cy + h, cx, cy + h);
+    g.quadraticCurveTo(cx - w * 0.9, cy + h, cx - w, cy - 2);
+    g.closePath();
+    g.fillStyle = inside;
+    g.fill();
+    g.save();
+    g.clip();
+    g.fillStyle = tongue;
+    g.beginPath();
+    g.ellipse(cx, cy + h * 1.05, w * 0.7, h * 0.5, 0, 0, Math.PI * 2);
+    g.fill();
+    g.restore();
+    g.stroke();
+  };
+  switch (shape) {
+    case Mouth.Soft: g.beginPath(); g.moveTo(cx - 9, cy); g.quadraticCurveTo(cx, cy + 3, cx + 9, cy); g.stroke(); break;
+    case Mouth.Smile: g.beginPath(); g.moveTo(cx - 13, cy - 3); g.quadraticCurveTo(cx, cy + 7, cx + 13, cy - 3); g.stroke(); break;
+    case Mouth.Laugh: dShape(19, 17); break;
+    case Mouth.O: g.fillStyle = inside; g.beginPath(); g.ellipse(cx, cy + 3, 6, 8, 0, 0, Math.PI * 2); g.fill(); g.stroke(); break;
+    case Mouth.Wavy: g.beginPath(); g.moveTo(cx - 11, cy + 3); g.quadraticCurveTo(cx - 5, cy - 2, cx, cy + 2); g.quadraticCurveTo(cx + 5, cy + 6, cx + 11, cy + 1); g.stroke(); break;
+    case Mouth.Hmm: g.beginPath(); g.moveTo(cx - 5, cy + 2); g.quadraticCurveTo(cx + 4, cy + 3, cx + 11, cy - 1); g.stroke(); break;
+    case Mouth.TalkMid: dShape(9, 8); break;
+    case Mouth.TalkWide: dShape(12, 12); break;
+  }
+}
+
 function drawEyes(g: G, s: FaceStyle, state: Eyes) {
+  if (s.style === 'cel') {
+    drawCelEyes(g, s, state);
+    return;
+  }
   if (s.style === 'natural') {
     drawNaturalEyes(g, s, state);
     return;
@@ -597,6 +818,28 @@ function drawEyes(g: G, s: FaceStyle, state: Eyes) {
 
 /** Cheeks and nose: the fixed lower-face layer. */
 function drawLower(g: G, s: FaceStyle) {
+  if (s.style === 'cel') {
+    for (const side of [-1, 1]) {
+      const [cx, cy] = at(side * 0.46, 0.34);
+      const bl = g.createRadialGradient(cx, cy, 2, cx, cy, 34);
+      bl.addColorStop(0, 'rgba(255, 125, 135, 0.38)');
+      bl.addColorStop(1, 'rgba(255, 125, 135, 0)');
+      g.fillStyle = bl;
+      g.beginPath();
+      g.ellipse(cx, cy, 38, 18, 0, 0, Math.PI * 2);
+      g.fill();
+    }
+    // A tiny nose: a short soft shadow under the tip.
+    const [nx, ny] = at(0.02, 0.31);
+    g.strokeStyle = 'rgba(175, 100, 95, 0.55)';
+    g.lineWidth = 3;
+    g.lineCap = 'round';
+    g.beginPath();
+    g.moveTo(nx + 3, ny - 3);
+    g.lineTo(nx - 2, ny + 2);
+    g.stroke();
+    return;
+  }
   if (s.style === 'natural') {
     // Just a faint warmth over the cheekbones.
     for (const side of [-1, 1]) {
@@ -758,6 +1001,7 @@ export function faceAtlas(style: FaceStyle, scale = 1): THREE.CanvasTexture {
     g.clip();
     g.translate(x, y);
     if (style.style === 'natural') drawNaturalMouth(g, i as Mouth);
+    else if (style.style === 'cel') drawCelMouth(g, i as Mouth);
     else drawMouth(g, i as Mouth);
     g.restore();
   }

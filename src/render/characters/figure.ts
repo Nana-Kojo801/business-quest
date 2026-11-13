@@ -203,11 +203,44 @@ function naturalHeadBlobs(C: THREE.Vector3, R: number, bone: THREE.Object3D): Bl
   return b;
 }
 
+/**
+ * A cel-shaded anime head (in the spirit of modern 3D anime games): a smooth rounded
+ * skull, soft cheeks, a gentle V-shaped jaw meeting in a small chin, the faintest nose
+ * and small ears. The face is lit as one soft plane, so the drawn eyes carry it.
+ */
+function celHeadBlobs(C: THREE.Vector3, R: number, bone: THREE.Object3D): Blob[] {
+  const s = R / 0.158;
+  const P = (x: number, y: number, z: number) => V(C.x + x * s, C.y + y * s, C.z + z * s);
+  const E = (x: number, y: number, z: number) => V(x * s, y * s, z * s);
+  const b: Blob[] = [
+    { kind: 'ellipsoid', a: P(0, 0.014, -0.01), r: E(0.152, 0.155, 0.158), k: 0, bone },
+    // Soft cheeks.
+    { kind: 'ellipsoid', a: P(-0.05, -0.048, 0.068), r: E(0.05, 0.046, 0.052), k: 0.05, bone },
+    { kind: 'ellipsoid', a: P(0.05, -0.048, 0.068), r: E(0.05, 0.046, 0.052), k: 0.05, bone },
+    // V-line jaw: one tapered stroke from below each ear down to the chin.
+    { kind: 'capsule', a: P(-0.072, -0.035, 0.012), b: P(0, -0.108, 0.074), r: 0.042 * s, rb: 0.017 * s, k: 0.05, bone },
+    { kind: 'capsule', a: P(0.072, -0.035, 0.012), b: P(0, -0.108, 0.074), r: 0.042 * s, rb: 0.017 * s, k: 0.05, bone },
+    // The faintest nose.
+    { kind: 'capsule', a: P(0, -0.018, 0.146), b: P(0, -0.044, 0.152), r: 0.004 * s, rb: 0.006 * s, k: 0.014, bone },
+    // Small ears.
+    { kind: 'ellipsoid', a: P(-0.15, -0.026, -0.006), r: E(0.011, 0.028, 0.02), k: 0.016, bone },
+    { kind: 'ellipsoid', a: P(0.15, -0.026, -0.006), r: E(0.011, 0.028, 0.02), k: 0.016, bone },
+  ];
+  return b;
+}
+
+export type HeadStyle = 'stylized' | 'natural' | 'cel';
+
 /** The sculpted head as a field around C (head space). */
-export function headField(C: THREE.Vector3, R: number, natural = false) {
+export function headField(C: THREE.Vector3, R: number, style: HeadStyle | boolean = 'stylized') {
   const bone = new THREE.Object3D();
-  if (natural) {
+  const st: HeadStyle = style === true ? 'natural' : style === false ? 'stylized' : style;
+  if (st === 'natural') {
     const blobs = naturalHeadBlobs(C, R, bone);
+    return { field: blend(blobs), blobs };
+  }
+  if (st === 'cel') {
+    const blobs = celHeadBlobs(C, R, bone);
     return { field: blend(blobs), blobs };
   }
   const blobs: Blob[] = [
@@ -225,8 +258,9 @@ export function headField(C: THREE.Vector3, R: number, natural = false) {
 /** Skull mesh (head space) from the sculpted head field. */
 export function sculptedSkull(C: THREE.Vector3, R: number, look: Look): Part {
   const natural = look.faceStyle === 'natural';
-  const { field, blobs } = headField(C, R, natural);
-  const g = surfaceNets(field, bounds(blobs, 0.03), detail.crowd ? 0.008 : natural ? 0.0045 : 0.0062);
+  const style: HeadStyle = natural ? 'natural' : look.faceStyle === 'cel' ? 'cel' : 'stylized';
+  const { field, blobs } = headField(C, R, style);
+  const g = surfaceNets(field, bounds(blobs, 0.03), detail.crowd ? 0.008 : style === 'stylized' ? 0.0062 : 0.0045);
   // Stylized faces are lit as one soft plane; natural faces keep their real shape in the light.
   if (!natural) faceNormals(g, C, R);
   return { geo: g, color: look.skin, mat: Mat.Skin };
@@ -237,8 +271,8 @@ export function sculptedSkull(C: THREE.Vector3, R: number, look: Look): Part {
  * the sculpted surface (so the face wraps the cheeks and nose), with the same angular
  * layout as the face atlas.
  */
-export function sculptedFacePatch(C: THREE.Vector3, R: number, phiLen: number, thetaTop: number, thetaLen: number, natural = false, U = 44, Vn = 30) {
-  const { field } = headField(C, R, natural);
+export function sculptedFacePatch(C: THREE.Vector3, R: number, phiLen: number, thetaTop: number, thetaLen: number, style: HeadStyle = 'stylized', U = 44, Vn = 30) {
+  const { field } = headField(C, R, style);
   const pos: number[] = [];
   const uv: number[] = [];
   const idx: number[] = [];

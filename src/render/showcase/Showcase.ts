@@ -21,9 +21,9 @@ interface Entry {
 }
 
 const CAST: Entry[] = [
-  // Sample of the sculpted style (#40) with a natural face, beside the current hero.
-  { name: 'hero-new', look: { ...LOOKS.player, shape: 'sculpted', faceStyle: 'natural' } },
-  { name: 'hero-new-soft', look: { ...LOOKS.player, shape: 'sculpted', faceStyle: 'soft' } },
+  // Sample of the sculpted style (#40) with a cel-shaded anime face, beside the current hero.
+  { name: 'hero-new', look: { ...LOOKS.player, shape: 'sculpted', faceStyle: 'cel' } },
+  { name: 'hero-new-soft', look: { ...LOOKS.player, shape: 'sculpted', faceStyle: 'cel', eyes: '#c0623a' } },
   { name: 'player', look: LOOKS.player },
   { name: 'merchant', look: LOOKS.merchant },
   { name: 'keeper', look: LOOKS.keeper },

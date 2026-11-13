@@ -37,7 +37,7 @@ export interface Look {
   /** Body construction: 'classic' (assembled parts) or 'sculpted' (one smooth form, fitted clothes). */
   shape?: 'classic' | 'sculpted';
   /** How the face is drawn. */
-  faceStyle?: 'anime' | 'storybook' | 'soft' | 'natural';
+  faceStyle?: 'anime' | 'storybook' | 'soft' | 'natural' | 'cel';
 }
 
 export const LOOKS: Record<string, Look> = {
