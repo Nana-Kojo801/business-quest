@@ -152,20 +152,39 @@ quality tier (`particles`, `lightShafts`).
 
 ## Characters
 
-`src/render/characters/Character.ts` builds anime-style characters from code:
-- Shape: smooth lathe profiles for body and limbs (profiles are normalised bottom-to-top so faces
-  point outward), clothing with folds, hair from tapered curving strands with a glossy band, and
-  a hand-drawn face (`face.ts`, canvas atlas with a blink frame) wrapped onto the shaped head.
-- Skeleton: hips > torso > head / arms / two-part cape; legs > shins > feet; spring-driven back
-  hair and cowlick.
-- Shading: soft cel ramp, sunlit rim, thin ink outlines (inverted hull), contact shadow.
-- Motion: eased speed; weight shift; hips/torso counter-rotation; arm lag; knee lift, foot roll
-  and toe-off; leaning into acceleration and turns; head steadied and leading turns; springs on
-  cape and hair that overshoot and settle; idle breathing, glances and blinking.
+Characters are code-built by a reusable builder in `src/render/characters/`, from data:
+- `looks.ts`: a `Look` (skin, hair style and colour, eyes, outfit colours and layers: vest, apron,
+  robe, belt, cuffs, cape, hat; build; personality). New cast members are new Looks.
+- `body.ts`: body and outfit parts per bone (sculpted torso with a shoulder line, sleeves, hands
+  with fingers, trousers, boots with cuffs and soles, collar, belt and buckle, vest with leather
+  edging, apron, robe and capelet, mantle and clasp, hat).
+- `hair.ts`: layered hair: a base shell, then broad ribbon locks (crown, fringe, side locks, back
+  rows) with per-lock shading; style extras (cowlick, nape tufts, bun, long hair on a spring bone).
+- `face.ts`: the face is drawn in code into an atlas of layers (6 eye/brow states, a cheek/nose
+  layer, 8 mouths); the face shader picks an eye cell and a mouth cell, so expressions combine:
+  neutral, smile, happy, surprise, worry, thinking, plus blinking and a talking mouth. Atlases
+  are shared between characters with the same style; crowd characters use half resolution.
+- `materials.ts`: one toon material for all surfaces, with a surface type per vertex (skin, cloth,
+  leather, metal, hair): coloured shadows, cloth weave and folds, leather grain and sheen, metal
+  glints, the hair "halo", a sunlit rim. Faces use face-plane normals (no hard shadow line across
+  the face). Outlines are tinted from the part colour at a constant on-screen width.
+- `shapes.ts`: geometry helpers (lathe with smoothed profiles, folds, shoulders, ribbon locks, head
+  shape). `detail.crowd` builds lighter characters for crowds (fewer locks, mitten hands).
+- `Character.ts`: skeleton, assembly (merged into body, cloth and outline skinned meshes plus the
+  face: ~5 draw calls) and procedural motion: eased speed, weight shift, counter-rotation, arm lag,
+  leaning into turns, springs on cape and hair, idle personality (lively, busy, calm), talking
+  (mouth and gestures), expressions, blinking.
 
-Appearances live in `looks.ts`. Villagers are placed in `src/core/npcs.ts` (they block
-movement), turn to face a nearby player, and glance around otherwise. `?cam=close` is a debug
-close-up camera for judging characters.
+Budget: ~30k triangles for a main character, ~17k for a crowd villager (unit-tested).
+
+Dialogue lines carry a `mood` (`src/content/dialogue.ts`); the game passes the speaker, mood and
+whether text is still typing to the view (`setSpeaking`), so the speaker's face and mouth follow
+the conversation. The conversation camera is an over-the-shoulder shot that favours the villager.
+Market shoppers smile when they'd buy, look happy when they do, worried when they miss out.
+
+`showcase.html` (`src/render/showcase/`) shows the cast under the real sky and post-processing on a
+turntable: `?who= ?view=full|face ?yaw= ?anim=idle|walk|run|wave ?expr= ?crowd=1 ?still=1`.
+`?cam=close` in the game is a debug close-up camera.
 
 ## Controls and camera
 

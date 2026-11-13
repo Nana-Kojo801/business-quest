@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#1b1430" />
+    <title>Business Quest: characters</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #1b1430; overflow: hidden; overscroll-behavior: none; }
+      body { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+        font: 600 14px/1.2 system-ui, sans-serif; color: #fff7e8; }
+      #app { position: fixed; inset: 0; }
+      #app canvas { display: block; width: 100%; height: 100%; }
+      #bar { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+        display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; width: min(94vw, 560px); }
+      #bar button { flex: 1 1 auto; min-height: 44px; padding: 6px 12px; border: 1px solid rgba(255, 220, 160, .45); border-radius: 12px;
+        background: rgba(36, 24, 52, .72); color: inherit; font: inherit; backdrop-filter: blur(6px); }
+      #bar button small { display: block; font-weight: 400; font-size: 11px; opacity: .7; text-transform: uppercase; letter-spacing: .08em; }
+      #hint { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 12px); width: 100%; text-align: center; font-weight: 400; font-size: 12px; opacity: .8; text-shadow: 0 1px 4px #0008; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="hint">Drag to turn · pinch or scroll to zoom</div>
+    <div id="bar">
+      <button id="prev" aria-label="Previous character">◀</button>
+      <button id="whoBtn"><small>Character</small><span id="who"></span></button>
+      <button id="next" aria-label="Next character">▶</button>
+      <button id="animBtn"><small>Pose</small><span id="anim"></span></button>
+      <button id="viewBtn"><small>View</small><span id="view"></span></button>
+      <button id="exprBtn"><small>Expression</small><span id="expr"></span></button>
+    </div>
+    <script type="module" src="/src/showcase.ts"></script>
+  </body>
+</html>

@@ -1,4 +1,9 @@
-/** Character appearances. Colours are sRGB hex. */
+/**
+ * Character appearances: the data the character builder works from. Colours are sRGB hex.
+ * New cast members are made by writing a Look; see showcase.html to preview them.
+ */
+export type Personality = 'lively' | 'busy' | 'calm';
+
 export interface Look {
   skin: string;
   hair: string;
@@ -19,6 +24,16 @@ export interface Look {
   build?: number;
   /** Gentler eyes for older characters. */
   calm?: boolean;
+  /** Leather belt colour (default a warm brown). */
+  belt?: string;
+  /** Leather cuffs at the wrists (default: the belt colour). */
+  cuffs?: string;
+  /** An apron in this colour. */
+  apron?: string;
+  /** Open vest over the shirt (default on, unless a robe). */
+  vest?: boolean;
+  /** How they stand around: bouncy, fidgety or still. */
+  personality?: Personality;
 }
 
 export const LOOKS: Record<string, Look> = {
@@ -33,6 +48,7 @@ export const LOOKS: Record<string, Look> = {
     legs: '#5d4436',
     boots: '#4a3024',
     cape: '#d04c42',
+    personality: 'lively',
   },
   merchant: {
     skin: '#eab792',
@@ -45,6 +61,10 @@ export const LOOKS: Record<string, Look> = {
     legs: '#5a4636',
     boots: '#3e2a20',
     build: 1.15,
+    apron: '#6a9a52',
+    vest: false,
+    belt: '#7a4a2e',
+    personality: 'busy',
   },
   keeper: {
     skin: '#ffe4d2',
@@ -59,6 +79,7 @@ export const LOOKS: Record<string, Look> = {
     robe: true,
     hat: '#2f4380',
     calm: true,
+    personality: 'calm',
   },
 };
 
@@ -86,5 +107,9 @@ export function villagerLook(seed: number): Look {
     boots: pick(['#3e2a20', '#4a3024', '#2a2230']),
     build: 0.95 + r() * 0.2,
     calm: r() < 0.3,
+    vest: r() < 0.6,
+    apron: r() < 0.25 ? pick(['#f2e8d0', '#c9b48a', '#8aa86a']) : undefined,
+    belt: pick(['#6b4630', '#4a3226', '#8a5a36']),
+    personality: pick(['lively', 'busy', 'calm'] as Personality[]),
   };
 }

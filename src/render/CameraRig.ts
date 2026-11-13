@@ -134,15 +134,17 @@ export class CameraRig {
       // Perpendicular to the pair, on whichever side the camera already is.
       let side = new THREE.Vector3(-ab.z, 0, ab.x);
       if (side.dot(pos.clone().sub(mid)) < 0) side.negate();
-      // Swing a little toward the player's back, so we see more of the other person's face.
-      side.addScaledVector(ab, -0.45).normalize();
-      const d = (portrait ? 3.6 : 3.0) + sep * 0.9;
-      this.convPos.copy(mid).addScaledVector(side, d);
-      this.convPos.y = mid.y + 1.75;
+      // Over the player's shoulder (a is the player, b the villager), close and at eye level,
+      // so the villager's face and expression read clearly.
+      side.addScaledVector(ab, -0.85).normalize();
+      const d = (portrait ? 2.1 : 2.2) + sep * 0.5;
+      const focus = mid.clone().lerp(b, 0.3);
+      this.convPos.copy(focus).addScaledVector(side, d);
+      this.convPos.y = focus.y + 1.62;
       // Aim lower when the dialogue box covers more of the screen, so faces sit in the clear area above it.
       const fovRad = (this.camera.fov * Math.PI) / 180;
       const drop = Math.tan(fovRad / 2) * d * cover;
-      this.convLook.set(mid.x, mid.y + 1.3 - drop, mid.z);
+      this.convLook.set(focus.x, focus.y + 1.42 - drop, focus.z);
       const g = heightAt(this.convPos.x, this.convPos.z) + 0.6;
       if (this.convPos.y < g) this.convPos.y = g;
     }

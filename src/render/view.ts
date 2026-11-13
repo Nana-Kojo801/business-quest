@@ -192,6 +192,15 @@ export class WorldView {
     this.scene.add(this.particles.group, this.shafts.mesh);
   }
 
+  /** The villager who is speaking (expression and moving mouth); everyone else looks neutral. */
+  setSpeaking(npcId: string | null, mood: string, talking: boolean) {
+    for (const v of this.npcs) {
+      const me = v.npc.id === npcId;
+      v.character.talking = me && talking;
+      v.character.setExpression(me ? mood : 'neutral');
+    }
+  }
+
   private convCover = 0;
   /** Frame a conversation between two ground points (feet positions). */
   startConversation(a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }) {
@@ -354,7 +363,7 @@ export class WorldView {
     const time = performance.now() / 1000;
     this.atmosphere.update(time, this.camera, this.focus);
     this.water.update(time);
-    updateCharacterLighting(this.atmosphere);
+    updateCharacterLighting(this.atmosphere, this.camera, this.renderer.domElement.height);
     for (const f of this.fields) f.update(this.focus, time);
     // Scripted shots frame things on purpose, so nothing needs dissolving out of the way.
     const fadeFocus = this.rig.shot ? FAR_AWAY : this.focus;

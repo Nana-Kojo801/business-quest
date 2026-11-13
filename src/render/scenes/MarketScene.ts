@@ -52,7 +52,7 @@ export class MarketScene {
       // Nudge off anything solid.
       for (let k = 0; k < 8 && (obstacleAt(home.x, home.z, 0.5) || structureAt(home.x, home.z, 0.5)); k++) home.addScaledVector(this.front, 0.4);
       home.y = heightAt(home.x, home.z);
-      const character = new Character(villagerLook(seeds[i]), atmosphere, seeds[i] * 0.37);
+      const character = new Character(villagerLook(seeds[i]), atmosphere, seeds[i] * 0.37, { crowd: true });
       character.root.position.copy(home);
       this.group.add(character.root);
       this.shoppers.push({ character, home, limit, path: [], speed: 0, delay: 0, done: true });
@@ -93,7 +93,10 @@ export class MarketScene {
   /** Hands up for everyone who'd buy at this price. */
   setPrice(price: number) {
     if (this.playing) return;
-    for (const s of this.shoppers) s.character.raised = s.limit >= price;
+    for (const s of this.shoppers) {
+      s.character.raised = s.limit >= price;
+      s.character.setExpression(s.character.raised ? 'smile' : 'neutral');
+    }
   }
 
   private faceStall() {
@@ -111,6 +114,7 @@ export class MarketScene {
       s.path = [];
       s.done = true;
       s.character.raised = false;
+      s.character.setExpression('neutral');
     }
     this.faceStall();
   }
@@ -126,6 +130,7 @@ export class MarketScene {
     result.buyers.forEach((idx, k) => {
       const s = this.shoppers[idx];
       s.character.raised = false;
+      s.character.setExpression('happy');
       s.path = [counter(k % 3), away(s, k * 0.4)];
       s.speed = 3.2;
       s.delay = 0.25 + k * 0.45;
@@ -134,6 +139,7 @@ export class MarketScene {
     result.missedOut.forEach((idx, k) => {
       const s = this.shoppers[idx];
       s.character.raised = false;
+      s.character.setExpression('worry');
       s.path = [away(s, 1 + k * 0.3)];
       s.speed = 3.8;
       s.delay = 0.8 + result.buyers.length * 0.45 + k * 0.2;

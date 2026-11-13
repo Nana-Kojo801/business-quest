@@ -97,6 +97,13 @@ export class DialogueBox {
     return this.script !== null;
   }
 
+  /** Who is speaking, how they look, and whether their words are still appearing. */
+  get current(): { speaker: string; mood: string; typing: boolean } | null {
+    if (!this.script) return null;
+    const line = this.line;
+    return { speaker: line.speaker, mood: line.mood ?? 'neutral', typing: this.shown < this.full.length };
+  }
+
   /** Height of the dialogue band, so the camera can keep faces above it. */
   get coverFraction() {
     return this.isOpen ? this.band.offsetHeight / Math.max(1, window.innerHeight) : 0;

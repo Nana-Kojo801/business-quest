@@ -1,23 +1,62 @@
 import * as THREE from 'three';
 
 /**
- * Anime faces drawn on a canvas and wrapped onto the front of the head.
- * The texture is an atlas: left half eyes open, right half eyes closed (blink).
+ * Anime faces, drawn in code on a canvas and wrapped onto the front of the head.
  *
- * Canvas layout matches a sphere patch spanning PHI_LEN radians across and
- * THETA_LEN radians down, starting THETA_TOP above the equator.
+ * The face is layered so expressions combine: the shader picks one eye cell (eyes and
+ * brows) for the upper face and one mouth cell, over a fixed layer of cheeks and nose.
+ *
+ * Atlas (1024 x 608):
+ *   eye cells, 2 x 3 of 512 x 160 (the upper 62.5% of the face patch)
+ *   cheek/nose layer 512 x 96 (the lower face), and 8 mouth cells of 128 x 64
+ *
+ * Canvas layout matches a sphere patch spanning PHI_LEN radians across and THETA_LEN
+ * radians down, starting THETA_TOP above the head's equator.
  */
 export const FACE_PHI_LEN = 1.5;
 export const FACE_THETA_TOP = 0.6;
 export const FACE_THETA_LEN = 1.3;
 
+/** The face patch as drawn: W x H "face pixels". */
 const W = 512;
 const H = 256;
+const EYE_H = 160; // eye cells cover face rows 0..160
+const LOWER_H = H - EYE_H; // 96
+const ATLAS_W = 1024;
+const ATLAS_H = 608;
+/** The mouth cell covers this box of the face (face pixels). */
+const MOUTH_BOX = { x: 192, y: 176, w: 128, h: 64 };
 
-/** Canvas coordinates for an angle offset from the face centre (radians right, radians down). */
-function at(phiOff: number, thetaOff: number): [number, number] {
-  return [W / 2 + (phiOff / FACE_PHI_LEN) * W, ((thetaOff + FACE_THETA_TOP) / FACE_THETA_LEN) * H];
+export const enum Eyes {
+  Open = 0,
+  Closed = 1,
+  Happy = 2,
+  Wide = 3,
+  Worried = 4,
+  Thinking = 5,
 }
+export const enum Mouth {
+  Smile = 0,
+  Laugh = 1,
+  O = 2,
+  Wavy = 3,
+  Hmm = 4,
+  TalkMid = 5,
+  TalkWide = 6,
+  Soft = 7,
+}
+
+/** Expressions as eye + mouth (+ the mouth to flap to while talking). */
+export const EXPRESSIONS = {
+  neutral: { eyes: Eyes.Open, mouth: Mouth.Soft, talk: Mouth.TalkMid },
+  smile: { eyes: Eyes.Open, mouth: Mouth.Smile, talk: Mouth.TalkWide },
+  happy: { eyes: Eyes.Happy, mouth: Mouth.Laugh, talk: Mouth.TalkWide },
+  surprise: { eyes: Eyes.Wide, mouth: Mouth.O, talk: Mouth.TalkWide },
+  worry: { eyes: Eyes.Worried, mouth: Mouth.Wavy, talk: Mouth.TalkMid },
+  thinking: { eyes: Eyes.Thinking, mouth: Mouth.Hmm, talk: Mouth.TalkMid },
+} as const;
+export type Expression = keyof typeof EXPRESSIONS;
+export const EXPRESSION_NAMES = Object.keys(EXPRESSIONS) as Expression[];
 
 export interface FaceStyle {
   iris: string;
@@ -27,159 +66,410 @@ export interface FaceStyle {
   calm?: boolean;
 }
 
-function drawEye(g: CanvasRenderingContext2D, cx: number, cy: number, side: number, s: FaceStyle, open: boolean) {
-  const lash = s.lash ?? '#241821';
-  const ew = 60;
-  const eh = s.calm ? 42 : 56;
+/** Face-pixel position for an angle offset from the face centre (radians right, radians down). */
+function at(phiOff: number, thetaOff: number): [number, number] {
+  return [W / 2 + (phiOff / FACE_PHI_LEN) * W, ((thetaOff + FACE_THETA_TOP) / FACE_THETA_LEN) * H];
+}
+
+const EYE_X = 0.36; // radians either side of centre
+const EYE_Y = 0.06;
+
+type G = CanvasRenderingContext2D;
+
+/** Eye shape path (open eye), centred on the origin; o = outer corner direction (+1 right). */
+function eyePath(g: G, ew: number, eh: number, o: number) {
+  g.beginPath();
+  g.moveTo(-ew * o, -eh * 0.12);
+  g.bezierCurveTo(-ew * 0.72 * o, -eh * 1.02, ew * 0.72 * o, -eh * 1.08, ew * 1.02 * o, -eh * 0.38);
+  g.bezierCurveTo(ew * 0.88 * o, eh * 0.72, -ew * 0.55 * o, eh * 0.95, -ew * o, -eh * 0.12);
+  g.closePath();
+}
+
+interface EyeOpts {
+  /** Fraction of the eye left open from the top (1 = fully open). */
+  open: number;
+  /** Iris offset as a fraction of eye width (glancing aside). */
+  look: number;
+  /** Iris scale (smaller for surprise). */
+  iris: number;
+  /** Outer corners tilt down (worry). */
+  droop: number;
+}
+
+function drawOpenEye(g: G, s: FaceStyle, o: number, opts: EyeOpts) {
+  const lash = s.lash ?? '#2a1820';
+  const ew = 58;
+  const eh = (s.calm ? 40 : 54) * (0.6 + 0.4 * opts.open);
   g.save();
-  g.translate(cx, cy);
-  if (!open) {
-    // Closed: a soft downward curve with a little lash flick.
-    g.strokeStyle = lash;
-    g.lineWidth = 6;
-    g.lineCap = 'round';
-    g.beginPath();
-    g.moveTo(-ew * 0.95, -2);
-    g.quadraticCurveTo(0, eh * 0.38, ew * 0.95, -2);
-    g.stroke();
-    g.restore();
-    return;
-  }
-  // Eye white, clipped to the eye shape.
-  const shape = () => {
-    g.beginPath();
-    g.moveTo(-ew, -eh * 0.15);
-    g.bezierCurveTo(-ew * 0.7, -eh * 1.0, ew * 0.75, -eh * 1.05, ew, -eh * 0.35);
-    g.bezierCurveTo(ew * 0.85, eh * 0.75, -ew * 0.6, eh * 0.95, -ew, -eh * 0.15);
-    g.closePath();
-  };
-  shape();
-  g.fillStyle = '#fffaf6';
+  g.rotate(opts.droop * o * 0.18);
+  // White of the eye with a soft lid shadow.
+  eyePath(g, ew, eh, o);
+  g.fillStyle = '#fffbf7';
   g.fill();
   g.save();
-  shape();
+  eyePath(g, ew, eh, o);
   g.clip();
-  // Iris: tall ellipse, dark at the top fading to a bright lower half.
-  const ix = side * -4;
-  const grad = g.createLinearGradient(0, -eh, 0, eh);
-  const iris = new THREE.Color(s.iris);
-  const dark = iris.clone().multiplyScalar(0.35).getStyle();
-  const light = iris.clone().lerp(new THREE.Color('#ffffff'), 0.35).getStyle();
+  const ix = opts.look * ew - o * 3;
+  const iy = eh * 0.1;
+  const irx = ew * 0.55 * opts.iris;
+  const iry = eh * 0.95 * opts.iris;
+  const col = new THREE.Color(s.iris);
+  const dark = col.clone().multiplyScalar(0.3).getStyle();
+  const mid = col.getStyle();
+  const light = col.clone().lerp(new THREE.Color('#ffffff'), 0.45).getStyle();
+  // Iris: dark top, bright lower half, with a darker rim.
+  const grad = g.createLinearGradient(0, iy - iry, 0, iy + iry);
   grad.addColorStop(0, dark);
-  grad.addColorStop(0.45, iris.getStyle());
+  grad.addColorStop(0.42, mid);
   grad.addColorStop(1, light);
   g.fillStyle = grad;
   g.beginPath();
-  g.ellipse(ix, eh * 0.08, ew * 0.56, eh * 0.95, 0, 0, Math.PI * 2);
+  g.ellipse(ix, iy, irx, iry, 0, 0, Math.PI * 2);
   g.fill();
-  // Iris ring and pupil.
+  g.lineWidth = 3.5;
   g.strokeStyle = dark;
-  g.lineWidth = 3;
   g.stroke();
-  g.fillStyle = '#1a1018';
+  // A glow ring in the lower iris.
+  g.strokeStyle = col.clone().lerp(new THREE.Color('#ffffff'), 0.7).getStyle();
+  g.globalAlpha = 0.55;
+  g.lineWidth = 3;
   g.beginPath();
-  g.ellipse(ix, eh * 0.02, ew * 0.24, eh * 0.45, 0, 0, Math.PI * 2);
-  g.fill();
-  // Shadow from the upper lid.
-  g.fillStyle = 'rgba(40, 20, 50, 0.28)';
+  g.ellipse(ix, iy + iry * 0.18, irx * 0.62, iry * 0.55, 0, 0.15 * Math.PI, 0.85 * Math.PI);
+  g.stroke();
+  g.globalAlpha = 1;
+  // Pupil.
+  g.fillStyle = '#160c14';
   g.beginPath();
-  g.ellipse(0, -eh * 0.95, ew * 1.2, eh * 0.5, 0, 0, Math.PI * 2);
+  g.ellipse(ix, iy - iry * 0.05, irx * 0.4, iry * 0.46, 0, 0, Math.PI * 2);
   g.fill();
-  // Highlights: a big soft one and a small sharp one.
+  // Upper lid shadow across the white and the iris.
+  g.fillStyle = 'rgba(60, 25, 55, 0.3)';
+  g.beginPath();
+  g.ellipse(0, -eh * 1.0, ew * 1.25, eh * 0.55, 0, 0, Math.PI * 2);
+  g.fill();
+  // Catchlights: a large soft one up and to the side, a small sharp one below.
   g.fillStyle = '#ffffff';
   g.beginPath();
-  g.ellipse(ix + side * -ew * 0.2 + ew * 0.1, -eh * 0.28, ew * 0.17, eh * 0.2, -0.4, 0, Math.PI * 2);
+  g.ellipse(ix - o * irx * 0.32, iy - iry * 0.45, irx * 0.32, iry * 0.24, -0.5 * o, 0, Math.PI * 2);
   g.fill();
   g.beginPath();
-  g.arc(ix + ew * 0.18, eh * 0.4, ew * 0.07, 0, Math.PI * 2);
+  g.arc(ix + o * irx * 0.36, iy + iry * 0.42, irx * 0.13, 0, Math.PI * 2);
   g.fill();
   g.restore();
-  // Upper lash: thick, tapering, with a flick at the outer corner.
+  // A partly shut eye: erase everything above the lid line (the skin of the head shows there).
+  const lidY = -eh * 1.0 + (1 - opts.open) * eh * 0.9;
+  if (opts.open < 0.99) {
+    g.save();
+    g.globalCompositeOperation = 'destination-out';
+    g.beginPath();
+    g.moveTo(-ew * 1.5 * o, -eh * 0.08);
+    g.bezierCurveTo(-ew * 0.72 * o, lidY - eh * 0.04, ew * 0.7 * o, lidY - eh * 0.1, ew * 1.5 * o, -eh * 0.42);
+    g.lineTo(ew * 1.5 * o, -eh * 2);
+    g.lineTo(-ew * 1.5 * o, -eh * 2);
+    g.closePath();
+    g.fill();
+    g.restore();
+  }
+  // Upper lash line: thick, tapering to a flick at the outer corner, with a few lash clumps.
   g.fillStyle = lash;
   g.beginPath();
-  const o = side; // outer corner direction
-  g.moveTo(-ew * 1.02 * o, -eh * 0.1);
-  g.bezierCurveTo(-ew * 0.7 * o, -eh * 1.1, ew * 0.7 * o, -eh * 1.15, ew * 1.1 * o, -eh * 0.45);
-  g.lineTo(ew * 1.28 * o, -eh * 0.62);
-  g.lineTo(ew * 1.05 * o, -eh * 0.25);
-  g.bezierCurveTo(ew * 0.65 * o, -eh * 0.88, -ew * 0.6 * o, -eh * 0.85, -ew * 1.02 * o, -eh * 0.1);
+  g.moveTo(-ew * 1.04 * o, -eh * 0.08);
+  g.bezierCurveTo(-ew * 0.72 * o, lidY - eh * 0.08, ew * 0.7 * o, lidY - eh * 0.14, ew * 1.08 * o, -eh * 0.44);
+  g.lineTo(ew * 1.32 * o, -eh * 0.66);
+  g.lineTo(ew * 1.24 * o, -eh * 0.42);
+  g.lineTo(ew * 1.38 * o, -eh * 0.4);
+  g.lineTo(ew * 1.06 * o, -eh * 0.22);
+  g.bezierCurveTo(ew * 0.66 * o, lidY + eh * 0.16, -ew * 0.6 * o, lidY + eh * 0.2, -ew * 1.04 * o, -eh * 0.08);
   g.closePath();
   g.fill();
-  // Lower lash: a thin partial line.
+  // Eyelid crease above the lashes.
+  g.strokeStyle = 'rgba(120, 60, 60, 0.55)';
+  g.lineWidth = 2.5;
+  g.lineCap = 'round';
+  g.beginPath();
+  g.moveTo(-ew * 0.55 * o, lidY - eh * 0.32);
+  g.quadraticCurveTo(ew * 0.25 * o, lidY - eh * 0.5, ew * 0.85 * o, lidY - eh * 0.2);
+  g.stroke();
+  // Lower lash: a short soft line at the outer half.
   g.strokeStyle = lash;
-  g.globalAlpha = 0.7;
+  g.globalAlpha = 0.6;
   g.lineWidth = 2.5;
   g.beginPath();
-  g.moveTo(ew * 0.75 * o, eh * 0.5);
-  g.quadraticCurveTo(ew * 0.1 * o, eh * 0.85, -ew * 0.45 * o, eh * 0.72);
+  g.moveTo(ew * 0.82 * o, eh * 0.45);
+  g.quadraticCurveTo(ew * 0.2 * o, eh * 0.86, -ew * 0.35 * o, eh * 0.74);
   g.stroke();
   g.globalAlpha = 1;
   g.restore();
 }
 
-function drawFace(g: CanvasRenderingContext2D, ox: number, s: FaceStyle, open: boolean) {
-  g.save();
-  g.translate(ox, 0);
-  for (const side of [-1, 1]) {
-    const [ex, ey] = at(side * 0.36, 0.06);
-    // side -1 is the viewer's left (the character's right); the outer corner points away from centre.
-    drawEye(g, ex, ey, side, s, open);
-    // Brow: a thin arched stroke.
-    const [bx, by] = at(side * 0.37, -0.27);
-    g.strokeStyle = s.brow;
-    g.lineWidth = 5;
-    g.lineCap = 'round';
-    g.beginPath();
-    g.moveTo(bx - side * 34, by + (s.calm ? 4 : 8));
-    g.quadraticCurveTo(bx, by - 6, bx + side * 36, by + 4);
-    g.stroke();
-    // Blush with a few soft hatch lines.
-    const [cx, cy] = at(side * 0.5, 0.36);
-    const bl = g.createRadialGradient(cx, cy, 2, cx, cy, 30);
-    bl.addColorStop(0, 'rgba(255, 120, 130, 0.5)');
-    bl.addColorStop(1, 'rgba(255, 120, 130, 0)');
-    g.fillStyle = bl;
-    g.beginPath();
-    g.ellipse(cx, cy, 34, 18, 0, 0, Math.PI * 2);
-    g.fill();
-    g.strokeStyle = 'rgba(230, 90, 100, 0.55)';
-    g.lineWidth = 2;
-    for (let k = -1; k <= 1; k++) {
-      g.beginPath();
-      g.moveTo(cx + k * 9 - 4, cy + 5);
-      g.lineTo(cx + k * 9 + 4, cy - 5);
-      g.stroke();
-    }
+function drawClosedEye(g: G, s: FaceStyle, o: number, happy: boolean) {
+  const lash = s.lash ?? '#2a1820';
+  const ew = 58;
+  g.strokeStyle = lash;
+  g.lineCap = 'round';
+  g.lineWidth = 6.5;
+  g.beginPath();
+  if (happy) {
+    // ^ ^ : an upward arc.
+    g.moveTo(-ew * 0.9, 10);
+    g.quadraticCurveTo(0, -30, ew * 0.9, 10);
+  } else {
+    // Gently closed: a downward curve with a lash flick at the outer corner.
+    g.moveTo(-ew * 0.95 * o, -2);
+    g.quadraticCurveTo(0, 22, ew * 0.95 * o, -2);
+    g.moveTo(ew * 0.95 * o, -2);
+    g.lineTo(ew * 1.18 * o, -10);
   }
-  // Nose: a tiny shadow mark.
-  const [nx, ny] = at(0.03, 0.3);
-  g.strokeStyle = 'rgba(160, 90, 80, 0.55)';
-  g.lineWidth = 3;
-  g.beginPath();
-  g.moveTo(nx, ny - 5);
-  g.lineTo(nx - 4, ny + 3);
   g.stroke();
-  // Mouth: a small soft smile.
-  const [mx, my] = at(0, 0.5);
-  g.strokeStyle = '#8a3c44';
-  g.lineWidth = 4;
+}
+
+/** Brows: lift raises both, tilt raises the inner ends (worry) or lowers them (determined); arch for one raised brow. */
+function drawBrow(g: G, s: FaceStyle, o: number, lift: number, tilt: number, arch: number) {
+  g.fillStyle = s.brow;
+  g.save();
+  g.translate(0, -lift);
+  g.rotate(-tilt * o * 0.25);
+  // A tapered brush stroke, thicker at the inner end.
   g.beginPath();
-  g.moveTo(mx - 14, my - 3);
-  g.quadraticCurveTo(mx, my + 7, mx + 14, my - 3);
-  g.stroke();
+  g.moveTo(-o * 34, 8 + (s.calm ? -2 : 0));
+  g.quadraticCurveTo(o * 2, -8 - arch, o * 38, 4);
+  g.quadraticCurveTo(o * 2, -1 - arch, -o * 34, 14);
+  g.closePath();
+  g.fill();
   g.restore();
 }
 
-export function createFaceTexture(style: FaceStyle): THREE.CanvasTexture {
+function drawEyes(g: G, s: FaceStyle, state: Eyes) {
+  for (const side of [-1, 1]) {
+    const o = side; // outer corner points away from centre
+    const [ex, ey] = at(side * EYE_X, EYE_Y);
+    const [bx, by] = at(side * 0.37, -0.27);
+    g.save();
+    g.translate(ex, ey);
+    if (state === Eyes.Closed) drawClosedEye(g, s, o, false);
+    else if (state === Eyes.Happy) drawClosedEye(g, s, o, true);
+    else {
+      const opts: EyeOpts = { open: 1, look: 0, iris: 1, droop: 0 };
+      if (state === Eyes.Wide) Object.assign(opts, { iris: 0.78 });
+      if (state === Eyes.Worried) Object.assign(opts, { open: 0.9, droop: 1 });
+      if (state === Eyes.Thinking) Object.assign(opts, { open: 0.62, look: 0.2 });
+      drawOpenEye(g, s, o, opts);
+    }
+    g.restore();
+    g.save();
+    g.translate(bx, by);
+    if (state === Eyes.Wide) drawBrow(g, s, o, 14, 0, 4);
+    else if (state === Eyes.Worried) drawBrow(g, s, o, 6, 1, -2);
+    else if (state === Eyes.Happy) drawBrow(g, s, o, 5, 0, 2);
+    else if (state === Eyes.Thinking) drawBrow(g, s, o, side > 0 ? 10 : 0, side > 0 ? 0 : -0.5, side > 0 ? 6 : 0);
+    else drawBrow(g, s, o, 0, 0, 0);
+    g.restore();
+  }
+}
+
+/** Cheeks and nose: the fixed lower-face layer. */
+function drawLower(g: G) {
+  for (const side of [-1, 1]) {
+    const [cx, cy] = at(side * 0.5, 0.36);
+    const bl = g.createRadialGradient(cx, cy, 2, cx, cy, 32);
+    bl.addColorStop(0, 'rgba(255, 120, 130, 0.45)');
+    bl.addColorStop(1, 'rgba(255, 120, 130, 0)');
+    g.fillStyle = bl;
+    g.beginPath();
+    g.ellipse(cx, cy, 36, 18, 0, 0, Math.PI * 2);
+    g.fill();
+    g.strokeStyle = 'rgba(230, 95, 105, 0.45)';
+    g.lineWidth = 2;
+    g.lineCap = 'round';
+    for (let k = -1; k <= 1; k++) {
+      g.beginPath();
+      g.moveTo(cx + k * 9 - 3, cy + 4);
+      g.lineTo(cx + k * 9 + 3, cy - 4);
+      g.stroke();
+    }
+  }
+  // Nose: a small shadow under the tip and a hint of a highlight.
+  const [nx, ny] = at(0.025, 0.3);
+  g.fillStyle = 'rgba(170, 95, 85, 0.5)';
+  g.beginPath();
+  g.ellipse(nx - 2, ny + 3, 5, 2.4, -0.3, 0, Math.PI * 2);
+  g.fill();
+}
+
+/** One mouth shape, centred in a 128 x 64 cell. */
+function drawMouth(g: G, shape: Mouth) {
+  const cx = 64;
+  const cy = 26;
+  const line = '#7c3240';
+  const inside = '#6b2633';
+  const tongue = '#e4767c';
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+  g.strokeStyle = line;
+  g.lineWidth = 4;
+  const open = (w: number, h: number, smile: number) => {
+    g.beginPath();
+    g.moveTo(cx - w, cy - smile);
+    g.quadraticCurveTo(cx, cy + h * 1.6, cx + w, cy - smile);
+    g.quadraticCurveTo(cx, cy - smile * 0.3 + h * 0.15, cx - w, cy - smile);
+    g.closePath();
+    g.fillStyle = inside;
+    g.fill();
+    g.save();
+    g.clip();
+    g.fillStyle = tongue;
+    g.beginPath();
+    g.ellipse(cx, cy + h * 1.15, w * 0.6, h * 0.55, 0, 0, Math.PI * 2);
+    g.fill();
+    g.restore();
+    g.stroke();
+  };
+  switch (shape) {
+    case Mouth.Smile:
+      g.beginPath();
+      g.moveTo(cx - 15, cy - 3);
+      g.quadraticCurveTo(cx, cy + 9, cx + 15, cy - 3);
+      g.stroke();
+      break;
+    case Mouth.Laugh:
+      open(22, 15, 6);
+      break;
+    case Mouth.O:
+      g.fillStyle = inside;
+      g.beginPath();
+      g.ellipse(cx, cy + 3, 8, 10, 0, 0, Math.PI * 2);
+      g.fill();
+      g.stroke();
+      break;
+    case Mouth.Wavy:
+      g.beginPath();
+      g.moveTo(cx - 14, cy + 3);
+      g.quadraticCurveTo(cx - 7, cy - 3, cx, cy + 2);
+      g.quadraticCurveTo(cx + 7, cy + 7, cx + 14, cy + 1);
+      g.stroke();
+      break;
+    case Mouth.Hmm:
+      g.beginPath();
+      g.moveTo(cx - 6, cy + 2);
+      g.quadraticCurveTo(cx + 4, cy + 4, cx + 13, cy - 1);
+      g.stroke();
+      break;
+    case Mouth.TalkMid:
+      open(11, 7, 1);
+      break;
+    case Mouth.TalkWide:
+      open(15, 10, 3);
+      break;
+    case Mouth.Soft:
+      g.beginPath();
+      g.moveTo(cx - 11, cy);
+      g.quadraticCurveTo(cx, cy + 5, cx + 11, cy);
+      g.stroke();
+      break;
+  }
+}
+
+/** Atlas cell origins (atlas pixels). */
+function eyeCell(i: number): [number, number] {
+  return [(i % 2) * W, Math.floor(i / 2) * EYE_H];
+}
+const LOWER_ORIGIN: [number, number] = [0, EYE_H * 3];
+function mouthCell(i: number): [number, number] {
+  return [W + (i % 4) * MOUTH_BOX.w, EYE_H * 3 + Math.floor(i / 4) * MOUTH_BOX.h];
+}
+
+const cache = new Map<string, THREE.CanvasTexture>();
+
+/** The face atlas for a style. Textures are shared between characters with the same style. */
+export function faceAtlas(style: FaceStyle, scale = 1): THREE.CanvasTexture {
+  const key = `${style.iris}|${style.brow}|${style.lash ?? ''}|${style.calm ? 1 : 0}|${scale}`;
+  const hit = cache.get(key);
+  if (hit) return hit;
   const canvas = document.createElement('canvas');
-  canvas.width = W * 2;
-  canvas.height = H;
+  canvas.width = Math.round(ATLAS_W * scale);
+  canvas.height = Math.round(ATLAS_H * scale);
   const g = canvas.getContext('2d')!;
-  drawFace(g, 0, style, true);
-  drawFace(g, W, style, false);
+  g.scale(scale, scale);
+  for (let i = 0; i < 6; i++) {
+    const [x, y] = eyeCell(i);
+    g.save();
+    g.beginPath();
+    g.rect(x, y, W, EYE_H);
+    g.clip();
+    g.translate(x, y);
+    drawEyes(g, style, i as Eyes);
+    g.restore();
+  }
+  g.save();
+  g.beginPath();
+  g.rect(LOWER_ORIGIN[0], LOWER_ORIGIN[1], W, LOWER_H);
+  g.clip();
+  g.translate(LOWER_ORIGIN[0], LOWER_ORIGIN[1] - EYE_H);
+  drawLower(g);
+  g.restore();
+  for (let i = 0; i < 8; i++) {
+    const [x, y] = mouthCell(i);
+    g.save();
+    g.beginPath();
+    g.rect(x, y, MOUTH_BOX.w, MOUTH_BOX.h);
+    g.clip();
+    g.translate(x, y);
+    drawMouth(g, i as Mouth);
+    g.restore();
+  }
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.repeat.set(0.5, 1);
   tex.anisotropy = 4;
+  tex.generateMipmaps = true;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  cache.set(key, tex);
   return tex;
+}
+
+/**
+ * Face material: picks the eye cell and mouth cell in the shader. Faces are lit softly
+ * and evenly (anime faces never get a hard shadow line across them); uLight follows the
+ * scene's brightness so they still darken at dusk.
+ */
+export function faceMaterial(map: THREE.Texture) {
+  const uniforms = {
+    uEyes: { value: 0 },
+    uMouth: { value: Mouth.Soft as number },
+    uLight: { value: new THREE.Color(1, 1, 1) },
+  };
+  const m = new THREE.MeshBasicMaterial({ map, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+  m.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, uniforms);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform float uEyes;\nuniform float uMouth;\nuniform vec3 uLight;')
+      .replace(
+        '#include <map_fragment>',
+        /* glsl */ `
+        {
+          // vMapUv: face-patch coordinates, u across (0..1), v down from the top (0..1).
+          vec2 f = vec2(vMapUv.x, 1.0 - vMapUv.y) * vec2(${W.toFixed(1)}, ${H.toFixed(1)});
+          vec4 texel = vec4(0.0);
+          const vec2 ATLAS = vec2(${ATLAS_W.toFixed(1)}, ${ATLAS_H.toFixed(1)});
+          // Atlas pixel (x right, y down from the top) to texture uv (the canvas is flipped on upload).
+          #define AT(px) vec2((px).x / ATLAS.x, 1.0 - (px).y / ATLAS.y)
+          if (f.y < ${EYE_H.toFixed(1)}) {
+            vec2 cell = vec2(mod(uEyes, 2.0) * ${W.toFixed(1)}, floor(uEyes / 2.0) * ${EYE_H.toFixed(1)});
+            texel = texture2D(map, AT(cell + f));
+          } else {
+            vec2 lo = vec2(0.0, ${(EYE_H * 3).toFixed(1)}) + f - vec2(0.0, ${EYE_H.toFixed(1)});
+            texel = texture2D(map, AT(lo));
+            vec2 mb = f - vec2(${MOUTH_BOX.x.toFixed(1)}, ${MOUTH_BOX.y.toFixed(1)});
+            if (mb.x >= 0.0 && mb.y >= 0.0 && mb.x < ${MOUTH_BOX.w.toFixed(1)} && mb.y < ${MOUTH_BOX.h.toFixed(1)}) {
+              vec2 cell = vec2(${W.toFixed(1)} + mod(uMouth, 4.0) * ${MOUTH_BOX.w.toFixed(1)}, ${(EYE_H * 3).toFixed(1)} + floor(uMouth / 4.0) * ${MOUTH_BOX.h.toFixed(1)});
+              vec4 mt = texture2D(map, AT(cell + mb));
+              texel = vec4(mix(texel.rgb, mt.rgb, mt.a), max(texel.a, mt.a));
+            }
+          }
+          diffuseColor *= texel;
+          diffuseColor.rgb *= uLight;
+        }`,
+      );
+  };
+  m.customProgramCacheKey = () => 'bq-face';
+  return { material: m, uniforms };
 }

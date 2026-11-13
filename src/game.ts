@@ -13,7 +13,7 @@ import { createControls, type Controls } from './ui/controls';
 import { createDebugOverlay } from './ui/debugOverlay';
 import { DialogueBox } from './ui/dialogue';
 import { Hud } from './ui/hud';
-import { SCRIPTS as SCRIPTS_REF } from './content/dialogue';
+import { SCRIPTS as SCRIPTS_REF, SPEAKERS } from './content/dialogue';
 import { Menu, loadSettings, saveSettings, type Settings } from './ui/menu';
 
 const MAX_STEPS_PER_FRAME = 8;
@@ -327,6 +327,10 @@ export class Game {
     this.view.setConversationCover(Math.max(this.dialogue.coverFraction, this.pricing.coverFraction));
     this.view.render(this.prev, this.sim.state, this.accumulator / TICK_DT, this.localPlayer, dt);
     this.dialogue.update(dt);
+    // The speaking villager shows the line's mood and moves their mouth while the words appear.
+    const line = this.dialogue.current;
+    const speakerId = line ? (Object.keys(SPEAKERS) as (keyof typeof SPEAKERS)[]).find((k) => SPEAKERS[k] === line.speaker) ?? null : null;
+    this.view.setSpeaking(speakerId, line?.mood ?? 'neutral', line?.typing ?? false);
     this.updateSound();
     if (this.market) {
       this.market.update(dt, performance.now() / 1000);

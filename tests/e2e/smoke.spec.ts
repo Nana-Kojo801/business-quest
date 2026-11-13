@@ -406,3 +406,27 @@ test('loading screen fades away, and sound starts on the first tap', async ({ pa
   await page.keyboard.up('KeyW');
   expect(errors).toEqual([]);
 });
+
+test('character showcase: renders the cast, switches characters, poses and expressions', async ({ page }) => {
+  test.setTimeout(120_000);
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  await page.goto('/showcase.html?quality=low&still=1');
+  type Show = { frames: number; who: string; anim: string; view: string; expression: string };
+  const show = () => page.evaluate(() => (window as unknown as { __show: Show }).__show);
+  await expect.poll(async () => (await show())?.frames ?? 0, { timeout: 60_000 }).toBeGreaterThan(3);
+  expect((await show()).who).toBe('player');
+  await page.locator('#next').click();
+  expect((await show()).who).toBe('merchant');
+  await page.locator('#animBtn').click();
+  expect((await show()).anim).toBe('walk');
+  await page.locator('#viewBtn').click();
+  expect((await show()).view).toBe('face');
+  await page.locator('#exprBtn').click();
+  expect((await show()).expression).toBe('smile');
+  const f = (await show()).frames;
+  await expect.poll(async () => (await show()).frames, { timeout: 60_000 }).toBeGreaterThan(f + 2);
+  expect(await distinctColours(page)).toBeGreaterThan(20);
+  expect(errors).toEqual([]);
+});
