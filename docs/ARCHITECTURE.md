@@ -34,7 +34,7 @@ No changes to core rules or rendering are needed for that.
 `src/render/pipeline.ts` runs each frame through:
 
 ```
-scene (HDR, MSAA) -> [painterly filter, high only] -> sharpen -> bloom -> tone mapping (Khronos Neutral) -> colour grade -> screen
+scene (HDR; MSAA on high) -> [painterly filter, high only] -> sharpen -> bloom -> tone mapping (Khronos Neutral) -> colour grade -> screen
 ```
 
 `src/render/quality.ts` picks a tier (phones start on medium, desktops on high), then lowers
@@ -43,12 +43,16 @@ render resolution when frames are slow and drops a tier if that is not enough.
 | Tier | Max pixel ratio | Painterly radius | MSAA | Shadows |
 |---|---|---|---|---|
 | low | 1 | off | off | off |
-| medium | 2 | off | 4x | 1024 |
-| high | 2.5 | 1 | 4x | 2048 |
+| medium | 1.75 | off | off | 1024 |
+| high | 2 | 1 | 4x | 2048 |
 
-Sharpness budget (#41): on phones the frame is spent on resolution and MSAA (cheap on tile-based
-phone GPUs) rather than the painterly smoothing filter, which blurred fine detail at phone density.
-The handcrafted look now comes from the content itself (drawn leaves, brushwork in shaders).
+Phone budget (#41, measured on the owner's phone): medium has no painterly filter (it blurred fine
+detail at phone density and cost a full-screen pass) and **no MSAA**. MSAA is not cheap in WebGL on
+phones: the browser can't resolve samples on-chip as native apps do, and 4x MSAA at 2x resolution
+dropped medium from 60 to 30 fps. The handcrafted look comes from the content itself (drawn leaves,
+brushwork in shaders); edges stay clean through the sharpen pass and alpha-sharpened leaf cut-outs.
+To measure costs on a device: `?dpr=1.5` (max pixel ratio) and `?msaa=0|4` override every tier.
+Check relative cost against the last build that held 60 fps before shipping visual changes.
 
 URL options: `?quality=low|medium|high`, `?adaptive=0`, `?debug=1` (fps overlay).
 
@@ -205,5 +209,6 @@ Marcellus for titles, Nunito for text; SVG icons in `icons.ts`).
   it after `renderer.compileAsync` has prepared every shader and the first frames have drawn.
 - Characters are skinned meshes (one skeleton, body/cloth/outline meshes: ~5 draw calls each).
   Valley trees are instanced per 32 m cell so culling works for the camera and the shadow map;
-  far trees use low-detail crowns. Medium tier: ~130 draw calls, ~650k triangles (after #41's grass, leaves and rocks; was 445k).
+  far trees use low-detail crowns. Medium tier: ~130 draw calls, ~550k triangles per frame including shadows (after #41; was 445k).
+  Distant trees use plain trunks and low-detail shapes.
 - Debug: `window.triBreakdown()` lists triangles per scene object; `__bq.renderInfo` gives calls.

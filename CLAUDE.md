@@ -22,7 +22,9 @@ of done.
 - **Don't spoil** story, mechanics or world design; describe what to try, not how it works.
 - Speak plainly. Report honestly what failed and what was fixed.
 - Ask them for the `?debug=1` line or the Settings → "Show frame rate" readout after visual
-  changes; target 60 fps at 100% resolution on medium.
+  changes; target 60 fps at 100% resolution **on medium** (check the readout says `medium`, not
+  `low`: on Auto the game silently drops a tier when slow). No MSAA on phones (halved fps, #41).
+  Before shipping, compare CPU-renderer frame cost against the last build that held 60 fps.
 - They like the current handcrafted look and want it sharper and more premium, not realistic.
 - Commit messages: say "Part of #N", **never "Closes #N"** (that closes issues before sign-off).
   Close issues on GitHub only after sign-off.
@@ -36,7 +38,8 @@ of done.
   branch, deploy by merging it into the default branch, or ask the owner.
 
 ## Debug URL options
-`?quality=low|medium|high`, `?adaptive=0`, `?debug=1`, `?sky=goldenHour|day|dusk`,
+`?quality=low|medium|high`, `?adaptive=0`, `?dpr=1.5` / `?msaa=0|4` (override every tier, for
+measuring costs on the owner's phone), `?debug=1`, `?sky=goldenHour|day|dusk`,
 `?cam=close` (character close-up camera), `?spawn=x,z`, `?quest=meet|return|market|debrief|done`.
 `window.__bq` exposes state for tests; `window.triBreakdown()` lists triangles per object.
 

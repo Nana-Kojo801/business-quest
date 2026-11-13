@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { QualityManager, TIER_SETTINGS, initialTier } from '../../src/render/quality';
+import { QualityManager, TIER_SETTINGS, initialTier, tierOverrides } from '../../src/render/quality';
 
 const feed = (q: QualityManager, ms: number, totalMs: number) => {
   for (let t = 0; t < totalMs; t += ms) q.sample(ms);
@@ -68,11 +68,19 @@ describe('quality', () => {
 });
 
 describe('phone (medium) tier image budget', () => {
-  it('spends on resolution and anti-aliasing rather than a smoothing filter', () => {
+  it('has no smoothing filter and no MSAA (too costly in WebGL on phones: halved fps, #41)', () => {
     const m = TIER_SETTINGS.medium;
-    expect(m.maxPixelRatio).toBeGreaterThanOrEqual(2);
-    expect(m.multisampling).toBeGreaterThan(0);
+    expect(m.maxPixelRatio).toBeGreaterThanOrEqual(1.75);
+    expect(m.multisampling).toBe(0);
     expect(m.painterlyRadius).toBe(0);
+  });
+
+  it('URL overrides change pixel ratio and MSAA for device testing, and ignore junk', () => {
+    expect(tierOverrides(new URLSearchParams('dpr=1.5&msaa=4'))).toEqual({ maxPixelRatio: 1.5, multisampling: 4 });
+    expect(tierOverrides(new URLSearchParams('dpr=abc&msaa=3'))).toEqual({});
+    const q = new QualityManager('medium', false, tierOverrides(new URLSearchParams('dpr=1.25')));
+    expect(q.pixelRatio(3)).toBe(1.25);
+    expect(q.settings.grass).toEqual(TIER_SETTINGS.medium.grass);
   });
 
   it('grass has a dense near field and a wider, sparser ring', () => {

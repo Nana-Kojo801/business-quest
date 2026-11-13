@@ -14,7 +14,7 @@ import { createLightShafts } from './ambient/LightShafts';
 import { createBirds } from './ambient/Birds';
 import { bakeGroundData, type GroundData } from './terrain/groundData';
 import { Pipeline } from './pipeline';
-import { QualityManager, initialTier } from './quality';
+import { QualityManager, initialTier, tierOverrides } from './quality';
 import { Atmosphere } from './sky/Atmosphere';
 import { presetFromParams } from './sky/presets';
 
@@ -86,7 +86,7 @@ export class WorldView {
 
     const params = new URLSearchParams(location.search);
     const isTouch = matchMedia('(pointer: coarse)').matches;
-    this.quality = new QualityManager(initialTier(params, isTouch), params.get('adaptive') !== '0');
+    this.quality = new QualityManager(initialTier(params, isTouch), params.get('adaptive') !== '0', tierOverrides(params));
 
     this.rig = new CameraRig(this.camera, params.get('cam') === 'close');
     this.atmosphere = new Atmosphere(this.scene);

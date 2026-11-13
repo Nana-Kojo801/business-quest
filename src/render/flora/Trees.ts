@@ -253,8 +253,23 @@ function pineGeometry(palette: Palette, seed: number, tiers: number, segments: n
     g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
     parts.push(withLeafAttrs(g));
   }
-  if (withTrunk) parts.push(withLeafAttrs(trunkGeometry('pine', seed).toNonIndexed()));
+  if (withTrunk) parts.push(withLeafAttrs(trunkGeometry('pine', seed)));
   return mergeGeometries(parts)!;
+}
+
+/** A plain five-sided trunk for distant trees, where root flare and branches can't be seen. */
+function stubTrunk() {
+  const g = new THREE.CylinderGeometry(0.12, 0.2, 1.9, 5, 1, true).translate(0, 0.75, 0).toNonIndexed();
+  g.deleteAttribute('uv');
+  const pos = g.attributes.position as THREE.BufferAttribute;
+  const col = new Float32Array(pos.count * 3);
+  const c = new THREE.Color();
+  for (let i = 0; i < pos.count; i++) {
+    c.copy(BARK_DARK).lerp(BARK, THREE.MathUtils.smoothstep(pos.getY(i), -0.2, 0.8));
+    col.set([c.r, c.g, c.b], i * 3);
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  return withLeafAttrs(g);
 }
 
 /** A trunk that flares into roots at the base; broadleaf trunks fork into branches under the crown. */
@@ -513,7 +528,8 @@ export function createTrees(atmosphere: Atmosphere, settings: TreeSettings) {
   // A mix of pines and rounded crowns, each a single low-detail shape with a stub of trunk.
   if (settings.farCount > 0) {
     const r = rng(900);
-    const farPine = pineGeometry(PALETTES.farPine, 77, 4, 6, true);
+    // Distant trees are small and hazy: low-detail shapes and plain trunks keep them cheap.
+    const farPine = mergeGeometries([pineGeometry(PALETTES.farPine, 77, 3, 5, false), stubTrunk()])!;
     const farRound = crownGeometry(
       [
         { c: new THREE.Vector3(0, 2.6, 0), r: 1.45 },
@@ -524,9 +540,9 @@ export function createTrees(atmosphere: Atmosphere, settings: TreeSettings) {
       78,
       0,
       0,
-      1,
+      0,
     );
-    const farRoundFull = mergeGeometries([farRound, withLeafAttrs(trunkGeometry('pine', 3).toNonIndexed())])!;
+    const farRoundFull = mergeGeometries([farRound, stubTrunk()])!;
     const spots: { m: THREE.Matrix4; pine: boolean }[] = [];
     for (let tries = 0; tries < settings.farCount * 6 && spots.length < settings.farCount; tries++) {
       const a = r() * Math.PI * 2;

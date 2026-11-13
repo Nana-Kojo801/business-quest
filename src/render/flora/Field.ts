@@ -111,7 +111,7 @@ function flower(): THREE.BufferGeometry {
     pos.push(0, y0, 0);
     part.push(1.0);
     // Outline of one rounded petal: narrow at the base, broad and round at the tip.
-    const outline: [number, number][] = [[-0.42, 0.03], [-0.36, 0.08], [-0.2, 0.115], [0, 0.125], [0.2, 0.115], [0.36, 0.08], [0.42, 0.03]];
+    const outline: [number, number][] = [[-0.42, 0.03], [-0.3, 0.1], [0, 0.125], [0.3, 0.1], [0.42, 0.03]];
     for (const [da, rr] of outline) {
       pos.push(Math.cos(a + da) * rr, y0 + rr * 0.45, Math.sin(a + da) * rr); // cupped upward
       part.push(1 + Math.min(0.99, rr / 0.125));

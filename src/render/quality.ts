@@ -7,6 +7,11 @@
  * slow, the tier drops. Tiers never rise automatically, to avoid flicker.
  *
  * URL overrides for testing: ?quality=low|medium|high  ?adaptive=0
+ * and, to measure costs on a real device: ?dpr=1.5 (max pixel ratio)  ?msaa=0|4
+ *
+ * Phones: MSAA is not cheap in WebGL. A browser can't resolve samples on-chip the
+ * way native apps can, so 4x MSAA at phone resolution writes four full-precision
+ * samples per pixel every frame; it halved the frame rate on the owner's phone (#41).
  */
 
 export type Tier = 'low' | 'medium' | 'high';
@@ -44,8 +49,8 @@ export interface TierSettings {
 
 export const TIER_SETTINGS: Record<Tier, TierSettings> = {
   low: { maxPixelRatio: 1, minScale: 0.6, painterlyRadius: 0, bloomLevels: 4, multisampling: 0, shadowMapSize: 0, grass: { count: 1800, radius: 8 }, grassFar: { count: 1600, radius: 13 }, flowers: { count: 260, radius: 11 }, farTrees: 200, pebbles: 30, particles: { motes: 120, fireflies: 30, petalsPerTree: 4 }, lightShafts: 4 },
-  medium: { maxPixelRatio: 2, minScale: 0.6, painterlyRadius: 0, bloomLevels: 6, multisampling: 4, shadowMapSize: 1024, grass: { count: 4000, radius: 9 }, grassFar: { count: 3600, radius: 18 }, flowers: { count: 700, radius: 16 }, farTrees: 450, pebbles: 70, particles: { motes: 350, fireflies: 60, petalsPerTree: 6 }, lightShafts: 8 },
-  high: { maxPixelRatio: 2.5, minScale: 0.9, painterlyRadius: 1, bloomLevels: 8, multisampling: 4, shadowMapSize: 2048, grass: { count: 6500, radius: 10 }, grassFar: { count: 6500, radius: 22 }, flowers: { count: 1200, radius: 20 }, farTrees: 800, pebbles: 110, particles: { motes: 600, fireflies: 90, petalsPerTree: 9 }, lightShafts: 10 },
+  medium: { maxPixelRatio: 1.75, minScale: 0.6, painterlyRadius: 0, bloomLevels: 6, multisampling: 0, shadowMapSize: 1024, grass: { count: 3400, radius: 9 }, grassFar: { count: 3000, radius: 18 }, flowers: { count: 600, radius: 16 }, farTrees: 450, pebbles: 70, particles: { motes: 350, fireflies: 60, petalsPerTree: 6 }, lightShafts: 8 },
+  high: { maxPixelRatio: 2, minScale: 0.9, painterlyRadius: 1, bloomLevels: 8, multisampling: 4, shadowMapSize: 2048, grass: { count: 6500, radius: 10 }, grassFar: { count: 6500, radius: 22 }, flowers: { count: 1200, radius: 20 }, farTrees: 800, pebbles: 110, particles: { motes: 600, fireflies: 90, petalsPerTree: 9 }, lightShafts: 10 },
 };
 
 const TARGET_FRAME_MS = 1000 / 55; // aim for ~55+ fps
@@ -66,6 +71,16 @@ export function initialTier(params: URLSearchParams, isTouch: boolean): Tier {
   return isTouch ? 'medium' : 'high';
 }
 
+/** Per-device test overrides from the URL (?dpr=, ?msaa=), applied on top of every tier. */
+export function tierOverrides(params: URLSearchParams): Partial<TierSettings> {
+  const out: Partial<TierSettings> = {};
+  const dpr = Number(params.get('dpr'));
+  if (params.has('dpr') && dpr >= 0.5 && dpr <= 4) out.maxPixelRatio = dpr;
+  const msaa = Number(params.get('msaa'));
+  if (params.has('msaa') && [0, 2, 4, 8].includes(msaa)) out.multisampling = msaa;
+  return out;
+}
+
 export class QualityManager {
   readonly state: QualityState;
   private frameTimes: number[] = [];
@@ -73,12 +88,12 @@ export class QualityManager {
   /** Called when tier or scale changes. */
   onChange: (state: QualityState, tierChanged: boolean) => void = () => {};
 
-  constructor(tier: Tier, adaptive: boolean) {
+  constructor(tier: Tier, adaptive: boolean, private overrides: Partial<TierSettings> = {}) {
     this.state = { tier, scale: 1, adaptive, fps: 0 };
   }
 
   get settings(): TierSettings {
-    return TIER_SETTINGS[this.state.tier];
+    return { ...TIER_SETTINGS[this.state.tier], ...this.overrides };
   }
 
   pixelRatio(devicePixelRatio: number): number {
