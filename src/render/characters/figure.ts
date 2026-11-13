@@ -52,15 +52,24 @@ function bodyBlobs(look: Look, b: FigureBones) {
   const th = b.thighs.map(W);
   const kn = b.shins.map(W);
   const an = b.feet.map(W);
+  const fem = look.body === 'female';
+  const masc = look.body === 'male';
+  // Chest, waist and hips by body type: women narrower at the waist and fuller at the hips.
   const torso: Blob[] = [
-    { kind: 'ellipsoid', a: V(0, hip.y + 0.34, 0.006), r: V(0.132 * w, 0.112, 0.094), k: 0, bone: b.torso },
-    { kind: 'ellipsoid', a: V(0, hip.y + 0.16, 0), r: V(0.124 * w, 0.115, 0.09), k: 0.07, bone: b.torso },
+    { kind: 'ellipsoid', a: V(0, hip.y + 0.34, 0.006), r: V((fem ? 0.114 : masc ? 0.126 : 0.132) * w, fem ? 0.104 : 0.112, fem ? 0.086 : 0.092), k: 0, bone: b.torso },
+    { kind: 'ellipsoid', a: V(0, hip.y + 0.16, 0), r: V((fem ? 0.104 : masc ? 0.118 : 0.124) * w, 0.112, fem ? 0.08 : 0.088), k: 0.07, bone: b.torso },
   ];
-  const shoulders: Blob[] = sh.map((p) => ({ kind: 'ellipsoid', a: V(p.x * 0.86, p.y - 0.012, 0), r: V(0.062, 0.055, 0.06), k: 0.06, bone: b.torso }) as Blob);
-  const neck: Blob = { kind: 'capsule', a: V(0, hip.y + 0.42, 0), b: V(0, hip.y + 0.58, 0.01), r: 0.05, rb: 0.046, k: 0.05, bone: b.torso };
-  const pelvis: Blob = { kind: 'ellipsoid', a: V(0, hip.y + 0.01, 0), r: V(0.138 * w, 0.1, 0.095), k: 0.06, bone: b.hips };
-  const uppers: Blob[] = sh.map((p, i) => ({ kind: 'capsule', a: V(p.x, p.y - 0.005, 0), b: V(el[i].x * 1.02, el[i].y + 0.01, 0), r: 0.051, rb: 0.043, k: 0.03, bone: b.uppers[i] }) as Blob);
-  const fores: Blob[] = el.map((p, i) => ({ kind: 'capsule', a: V(p.x * 1.02, p.y - 0.005, 0), b: V(p.x * 1.02, p.y - 0.18, 0.008), r: 0.043, rb: 0.034, k: 0.022, bone: b.fores[i] }) as Blob);
+  if (fem) {
+    // A slight, soft figure.
+    for (const side of [-1, 1]) torso.push({ kind: 'ellipsoid', a: V(side * 0.044 * w, hip.y + 0.315, 0.052), r: V(0.044, 0.04, 0.034), k: 0.045, bone: b.torso });
+  }
+  // Rounded shoulders sitting just inside the arm joints, sloping gently down from the neck.
+  const shoulders: Blob[] = sh.map((p) => ({ kind: 'ellipsoid', a: V(p.x * 0.8, p.y - 0.02, 0), r: V(fem ? 0.044 : 0.05, fem ? 0.04 : 0.045, fem ? 0.046 : 0.052), k: 0.05, bone: b.torso }) as Blob);
+  const neck: Blob = { kind: 'capsule', a: V(0, hip.y + 0.42, 0), b: V(0, hip.y + 0.58, 0.01), r: fem ? 0.043 : 0.05, rb: fem ? 0.04 : 0.046, k: 0.05, bone: b.torso };
+  const pelvis: Blob = { kind: 'ellipsoid', a: V(0, hip.y + 0.01, 0), r: V((fem ? 0.146 : masc ? 0.13 : 0.138) * w, 0.1, fem ? 0.098 : 0.093), k: 0.06, bone: b.hips };
+  const armR = fem ? 0.86 : 1;
+  const uppers: Blob[] = sh.map((p, i) => ({ kind: 'capsule', a: V(p.x, p.y - 0.005, 0), b: V(el[i].x * 1.02, el[i].y + 0.01, 0), r: 0.049 * armR, rb: 0.042 * armR, k: 0.03, bone: b.uppers[i] }) as Blob);
+  const fores: Blob[] = el.map((p, i) => ({ kind: 'capsule', a: V(p.x * 1.02, p.y - 0.005, 0), b: V(p.x * 1.02, p.y - 0.18, 0.008), r: 0.042 * armR, rb: 0.033 * armR, k: 0.022, bone: b.fores[i] }) as Blob);
   const hands: Blob[] = el.flatMap((p, i) => {
     const side = i === 0 ? -1 : 1;
     const x = p.x * 1.02;
@@ -70,8 +79,8 @@ function bodyBlobs(look: Look, b: FigureBones) {
       { kind: 'capsule', a: V(x - side * 0.014, p.y - 0.21, 0.022), b: V(x - side * 0.03, p.y - 0.235, 0.04), r: 0.012, rb: 0.011, k: 0.012, bone: b.fores[i] },
     ] as Blob[];
   });
-  const thighs: Blob[] = th.map((p, i) => ({ kind: 'capsule', a: V(p.x, p.y + 0.02, 0), b: V(kn[i].x, kn[i].y + 0.02, 0.008), r: 0.088, rb: 0.064, k: 0.06, bone: b.thighs[i] }) as Blob);
-  const shins: Blob[] = kn.map((p, i) => ({ kind: 'capsule', a: V(p.x, p.y, 0.008), b: V(an[i].x, an[i].y + 0.06, 0), r: 0.062, rb: 0.048, k: 0.035, bone: b.shins[i] }) as Blob);
+  const thighs: Blob[] = th.map((p, i) => ({ kind: 'capsule', a: V(p.x, p.y + 0.02, 0), b: V(kn[i].x, kn[i].y + 0.02, 0.008), r: fem ? 0.084 : 0.086, rb: fem ? 0.058 : 0.063, k: 0.06, bone: b.thighs[i] }) as Blob);
+  const shins: Blob[] = kn.map((p, i) => ({ kind: 'capsule', a: V(p.x, p.y, 0.008), b: V(an[i].x, an[i].y + 0.06, 0), r: fem ? 0.056 : 0.06, rb: fem ? 0.042 : 0.047, k: 0.035, bone: b.shins[i] }) as Blob);
   const feet: Blob[] = an.map((p, i) => ({ kind: 'ellipsoid', a: V(p.x, 0.048, 0.04), r: V(0.062, 0.05, 0.105), k: 0.04, bone: b.feet[i] }) as Blob);
   return { torso, shoulders, neck, pelvis, uppers, fores, hands, thighs, shins, feet, hipY: hip.y, w, el, sh, kn };
 }
@@ -158,7 +167,7 @@ export function figureMantle(look: Look, b: FigureBones): Part[] {
   const B = bodyBlobs(look, b);
   const blobs = [...B.torso, ...B.shoulders];
   const open: Field = (x, _y, z) => Math.max(Math.abs(x) - 0.065, -z);
-  const mantle = minus(shell(blend(blobs), 0.013, above(B.hipY + 0.35)), open);
+  const mantle = minus(shell(blend(blobs), 0.01, above(B.hipY + 0.37)), open);
   const part = sculpted(mantle, blobs, look.cape!, Mat.Cloth, detail.crowd ? 0.017 : 0.0125);
   const clasp = surfacePoint(blend(blobs), V(0, B.hipY + 0.44, 0), V(0, 0, 1));
   const out: Part[] = [part];
@@ -208,8 +217,9 @@ function naturalHeadBlobs(C: THREE.Vector3, R: number, bone: THREE.Object3D): Bl
  * skull, soft cheeks, a gentle V-shaped jaw meeting in a small chin, the faintest nose
  * and small ears. The face is lit as one soft plane, so the drawn eyes carry it.
  */
-function celHeadBlobs(C: THREE.Vector3, R: number, bone: THREE.Object3D): Blob[] {
+function celHeadBlobs(C: THREE.Vector3, R: number, bone: THREE.Object3D, masc = false): Blob[] {
   const s = R / 0.158;
+  const chin = masc ? 0.022 : 0.017;
   const P = (x: number, y: number, z: number) => V(C.x + x * s, C.y + y * s, C.z + z * s);
   const E = (x: number, y: number, z: number) => V(x * s, y * s, z * s);
   const b: Blob[] = [
@@ -218,8 +228,8 @@ function celHeadBlobs(C: THREE.Vector3, R: number, bone: THREE.Object3D): Blob[]
     { kind: 'ellipsoid', a: P(-0.05, -0.048, 0.068), r: E(0.05, 0.046, 0.052), k: 0.05, bone },
     { kind: 'ellipsoid', a: P(0.05, -0.048, 0.068), r: E(0.05, 0.046, 0.052), k: 0.05, bone },
     // V-line jaw: one tapered stroke from below each ear down to the chin.
-    { kind: 'capsule', a: P(-0.072, -0.035, 0.012), b: P(0, -0.108, 0.074), r: 0.042 * s, rb: 0.017 * s, k: 0.05, bone },
-    { kind: 'capsule', a: P(0.072, -0.035, 0.012), b: P(0, -0.108, 0.074), r: 0.042 * s, rb: 0.017 * s, k: 0.05, bone },
+    { kind: 'capsule', a: P(-0.072, -0.035, 0.012), b: P(0, -0.108, 0.074), r: 0.042 * s, rb: chin * s, k: 0.05, bone },
+    { kind: 'capsule', a: P(0.072, -0.035, 0.012), b: P(0, -0.108, 0.074), r: 0.042 * s, rb: chin * s, k: 0.05, bone },
     // The faintest nose.
     { kind: 'capsule', a: P(0, -0.018, 0.146), b: P(0, -0.044, 0.152), r: 0.004 * s, rb: 0.006 * s, k: 0.014, bone },
     // Small ears.
@@ -232,7 +242,7 @@ function celHeadBlobs(C: THREE.Vector3, R: number, bone: THREE.Object3D): Blob[]
 export type HeadStyle = 'stylized' | 'natural' | 'cel';
 
 /** The sculpted head as a field around C (head space). */
-export function headField(C: THREE.Vector3, R: number, style: HeadStyle | boolean = 'stylized') {
+export function headField(C: THREE.Vector3, R: number, style: HeadStyle | boolean = 'stylized', masc = false) {
   const bone = new THREE.Object3D();
   const st: HeadStyle = style === true ? 'natural' : style === false ? 'stylized' : style;
   if (st === 'natural') {
@@ -240,7 +250,7 @@ export function headField(C: THREE.Vector3, R: number, style: HeadStyle | boolea
     return { field: blend(blobs), blobs };
   }
   if (st === 'cel') {
-    const blobs = celHeadBlobs(C, R, bone);
+    const blobs = celHeadBlobs(C, R, bone, masc);
     return { field: blend(blobs), blobs };
   }
   const blobs: Blob[] = [
@@ -259,7 +269,7 @@ export function headField(C: THREE.Vector3, R: number, style: HeadStyle | boolea
 export function sculptedSkull(C: THREE.Vector3, R: number, look: Look): Part {
   const natural = look.faceStyle === 'natural';
   const style: HeadStyle = natural ? 'natural' : look.faceStyle === 'cel' ? 'cel' : 'stylized';
-  const { field, blobs } = headField(C, R, style);
+  const { field, blobs } = headField(C, R, style, look.body === 'male');
   const g = surfaceNets(field, bounds(blobs, 0.03), detail.crowd ? 0.008 : style === 'stylized' ? 0.0062 : 0.0045);
   // Stylized faces are lit as one soft plane; natural faces keep their real shape in the light.
   if (!natural) faceNormals(g, C, R);
@@ -271,8 +281,8 @@ export function sculptedSkull(C: THREE.Vector3, R: number, look: Look): Part {
  * the sculpted surface (so the face wraps the cheeks and nose), with the same angular
  * layout as the face atlas.
  */
-export function sculptedFacePatch(C: THREE.Vector3, R: number, phiLen: number, thetaTop: number, thetaLen: number, style: HeadStyle = 'stylized', U = 44, Vn = 30) {
-  const { field } = headField(C, R, style);
+export function sculptedFacePatch(C: THREE.Vector3, R: number, phiLen: number, thetaTop: number, thetaLen: number, style: HeadStyle = 'stylized', masc = false, U = 44, Vn = 30) {
+  const { field } = headField(C, R, style, masc);
   const pos: number[] = [];
   const uv: number[] = [];
   const idx: number[] = [];

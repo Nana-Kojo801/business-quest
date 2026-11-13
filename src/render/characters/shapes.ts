@@ -107,7 +107,7 @@ export function shoulders(g: THREE.BufferGeometry, y0: number, width: number, de
  * r1 at the tip (eased so locks stay full, then point); `flat` squashes it into a ribbon
  * whose broad side faces outward from `outFrom` (e.g. the head centre).
  */
-export function strand(points: THREE.Vector3[], r0: number, r1: number, flat = 0.5, segIn = 9, radialIn = 5, outFrom?: THREE.Vector3) {
+export function strand(points: THREE.Vector3[], r0: number, r1: number, flat = 0.5, segIn = 9, radialIn = 5, outFrom?: THREE.Vector3, rootTaper = 0) {
   // Locks are seen small on a phone: 9 x 5 segments stay smooth; crowds use fewer.
   const seg = Math.max(4, Math.round(Math.min(segIn, 9) * (detail.crowd ? 0.7 : 1)));
   const radial = detail.crowd ? 4 : Math.min(radialIn, 5);
@@ -125,7 +125,8 @@ export function strand(points: THREE.Vector3[], r0: number, r1: number, flat = 0
     const t = i / seg;
     const c = curve.getPointAt(t);
     // Full for most of the length, then tapering to a point.
-    const r = THREE.MathUtils.lerp(r0, r1, Math.pow(t, 1.6));
+    // (rootTaper > 0: the root also narrows, so a lock starting on the head shows no cut end.)
+    const r = THREE.MathUtils.lerp(r0, r1, Math.pow(t, 1.6)) * (rootTaper > 0 ? 0.25 + 0.75 * THREE.MathUtils.smoothstep(t, 0, rootTaper) : 1);
     tan.copy(frames.tangents[i]);
     if (outFrom) {
       out.copy(c).sub(outFrom);

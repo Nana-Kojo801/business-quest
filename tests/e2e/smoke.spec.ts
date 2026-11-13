@@ -416,9 +416,9 @@ test('character showcase: renders the cast, switches characters, poses and expre
   type Show = { frames: number; who: string; anim: string; view: string; expression: string };
   const show = () => page.evaluate(() => (window as unknown as { __show: Show }).__show);
   await expect.poll(async () => (await show())?.frames ?? 0, { timeout: 60_000 }).toBeGreaterThan(3);
-  expect((await show()).who).toBe('hero-new');
+  expect((await show()).who).toBe('hero-boy');
   await page.locator('#next').click();
-  expect((await show()).who).toBe('hero-new-soft');
+  expect((await show()).who).toBe('hero-girl');
   await page.locator('#animBtn').click();
   expect((await show()).anim).toBe('walk');
   await page.locator('#viewBtn').click();

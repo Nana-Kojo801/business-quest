@@ -7,7 +7,7 @@ export type Personality = 'lively' | 'busy' | 'calm';
 export interface Look {
   skin: string;
   hair: string;
-  hairStyle: 'short' | 'bun' | 'long';
+  hairStyle: 'short' | 'bun' | 'long' | 'spiky' | 'ponytail';
   eyes: string;
   /** Shirt / main garment. */
   top: string;
@@ -34,6 +34,8 @@ export interface Look {
   vest?: boolean;
   /** How they stand around: bouncy, fidgety or still. */
   personality?: Personality;
+  /** Body type for sculpted figures (shoulders, waist, hips; face details). */
+  body?: 'male' | 'female';
   /** Body construction: 'classic' (assembled parts) or 'sculpted' (one smooth form, fitted clothes). */
   shape?: 'classic' | 'sculpted';
   /** How the face is drawn. */

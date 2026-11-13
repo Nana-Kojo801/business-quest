@@ -68,6 +68,8 @@ export interface FaceStyle {
   style?: 'anime' | 'storybook' | 'soft' | 'natural' | 'cel';
   /** Draw a little nose mark (heads without a sculpted nose). */
   noseMark?: boolean;
+  /** Boyish details: a finer lash line without the wing, straighter and fuller brows. */
+  masc?: boolean;
 }
 
 /** Face-pixel position for an angle offset from the face centre (radians right, radians down). */
@@ -559,11 +561,11 @@ function drawCelEye(g: G, s: FaceStyle, o: number, state: Eyes) {
   const lash = s.lash ?? '#25161c';
   const warm = new THREE.Color(lash).lerp(new THREE.Color('#b2554e'), 0.7).getStyle();
   const ew = 60;
-  let eh = s.calm ? 40 : 50;
+  let eh = (s.calm ? 40 : 50) * (s.masc ? 0.9 : 1);
   if (state === Eyes.Closed || state === Eyes.Happy) {
     g.strokeStyle = lash;
     g.lineCap = 'round';
-    g.lineWidth = 7;
+    g.lineWidth = s.masc ? 6 : 7;
     g.beginPath();
     if (state === Eyes.Happy) {
       g.moveTo(-ew * 0.95 * o, 6);
@@ -667,9 +669,10 @@ function drawCelEye(g: G, s: FaceStyle, o: number, state: Eyes) {
   g.beginPath();
   g.moveTo(-ew * 1.02 * o, eh * 0.05);
   g.bezierCurveTo(-ew * 0.8 * o, ly(eh * 0.2), ew * 0.25 * o, ly(-eh * 0.12), ew * 1.04 * o, -eh * 0.32);
-  g.lineTo(ew * 1.3 * o, -eh * 0.5); // wing
+  if (!s.masc) g.lineTo(ew * 1.3 * o, -eh * 0.5); // wing
+  else g.lineTo(ew * 1.1 * o, -eh * 0.36);
   g.lineTo(ew * 1.08 * o, -eh * 0.2);
-  g.bezierCurveTo(ew * 0.25 * o, ly(eh * 0.06), -ew * 0.78 * o, ly(eh * 0.36), -ew * 1.02 * o, eh * 0.05);
+  g.bezierCurveTo(ew * 0.25 * o, ly(eh * (s.masc ? -0.02 : 0.06)), -ew * 0.78 * o, ly(eh * (s.masc ? 0.26 : 0.36)), -ew * 1.02 * o, eh * 0.05);
   g.closePath();
   g.fill();
   // Double-eyelid crease.
@@ -697,9 +700,17 @@ function drawCelBrow(g: G, s: FaceStyle, o: number, lift: number, tilt: number) 
   g.rotate(-tilt * o * 0.25);
   g.fillStyle = s.brow;
   g.beginPath();
-  g.moveTo(-o * 34, 7);
-  g.quadraticCurveTo(o * 4, -9, o * 38, 3);
-  g.quadraticCurveTo(o * 4, -3, -o * 34, 12);
+  if (s.masc) {
+    // Straighter and fuller.
+    g.moveTo(-o * 34, 2);
+    g.quadraticCurveTo(o * 2, -6, o * 38, 0);
+    g.lineTo(o * 36, 6);
+    g.quadraticCurveTo(o * 2, 2, -o * 34, 13);
+  } else {
+    g.moveTo(-o * 34, 7);
+    g.quadraticCurveTo(o * 4, -9, o * 38, 3);
+    g.quadraticCurveTo(o * 4, -3, -o * 34, 12);
+  }
   g.closePath();
   g.fill();
   g.restore();
@@ -968,7 +979,7 @@ const cache = new Map<string, THREE.CanvasTexture>();
 
 /** The face atlas for a style. Textures are shared between characters with the same style. */
 export function faceAtlas(style: FaceStyle, scale = 1): THREE.CanvasTexture {
-  const key = `${style.iris}|${style.brow}|${style.lash ?? ''}|${style.calm ? 1 : 0}|${style.style ?? 'anime'}|${style.noseMark === false ? 0 : 1}|${scale}`;
+  const key = `${style.iris}|${style.brow}|${style.lash ?? ''}|${style.calm ? 1 : 0}|${style.style ?? 'anime'}|${style.noseMark === false ? 0 : 1}|${style.masc ? 1 : 0}|${scale}`;
   const hit = cache.get(key);
   if (hit) return hit;
   const canvas = document.createElement('canvas');

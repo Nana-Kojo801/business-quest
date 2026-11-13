@@ -217,7 +217,9 @@ export class Character {
     // Arms hang from the shoulder line.
     for (const side of [-1, 1]) {
       const upper = new THREE.Bone();
-      upper.position.set(side * (0.168 * w + 0.03), 0.425, 0);
+      // Sculpted figures have natural shoulders: narrower, a little narrower still for women.
+      const shoulderX = sculptedShape ? (look.body === 'female' ? 0.136 * w + 0.022 : 0.15 * w + 0.025) : 0.168 * w + 0.03;
+      upper.position.set(side * shoulderX, look.body === 'female' && sculptedShape ? 0.415 : 0.425, 0);
       this.torso.add(upper);
       const fore = new THREE.Bone();
       fore.position.y = -0.25;
@@ -250,7 +252,7 @@ export class Character {
     }
     const hair = buildHair(look.hairStyle, look.hair, C, R, !!look.hat);
     bone(this.head, hair.head);
-    this.hairBack.position.set(0, C.y + R * 0.2, -R * 0.4);
+    this.hairBack.position.copy(hair.backRoot ?? V(0, C.y + R * 0.2, -R * 0.4));
     this.head.add(this.hairBack);
     bone(this.hairBack, hair.back);
     this.cowlick.position.copy(cowlickRoot(C, R));
@@ -259,13 +261,13 @@ export class Character {
 
     const hairCol = new THREE.Color(look.hair);
     const bright = hairCol.r + hairCol.g + hairCol.b > 2.2;
-    const atlas = faceAtlas({ iris: look.eyes, brow: hairCol.clone().multiplyScalar(bright ? 0.55 : 0.75).getStyle(), calm: look.calm, style: look.faceStyle, noseMark: !sculptedShape }, options.crowd ? 0.5 : 1);
+    const atlas = faceAtlas({ iris: look.eyes, brow: hairCol.clone().multiplyScalar(bright ? 0.55 : 0.75).getStyle(), calm: look.calm, style: look.faceStyle, noseMark: !sculptedShape, masc: look.body === 'male' }, options.crowd ? 0.5 : 1);
     const face = faceMaterial(atlas);
     this.faceU = face.uniforms;
     atmosphere.patchMaterial(face.material);
     let fg: THREE.BufferGeometry;
     if (sculptedShape) {
-      fg = sculptedFacePatch(C, R, FACE_PHI_LEN, FACE_THETA_TOP, FACE_THETA_LEN, look.faceStyle === 'natural' ? 'natural' : look.faceStyle === 'cel' ? 'cel' : 'stylized');
+      fg = sculptedFacePatch(C, R, FACE_PHI_LEN, FACE_THETA_TOP, FACE_THETA_LEN, look.faceStyle === 'natural' ? 'natural' : look.faceStyle === 'cel' ? 'cel' : 'stylized', look.body === 'male');
     } else {
       fg = new THREE.SphereGeometry(R * 1.006, options.crowd ? 16 : 24, options.crowd ? 10 : 14, Math.PI / 2 - FACE_PHI_LEN / 2, FACE_PHI_LEN, Math.PI / 2 - FACE_THETA_TOP, FACE_THETA_LEN);
       // Sphere uv runs the other way round from our canvas layout; mirror u.

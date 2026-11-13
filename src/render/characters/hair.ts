@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Mat } from './materials';
 import { V, detail, part, strand, tr, type ColorFn, type Part } from './shapes';
+import { surfaceNets } from './sculpt';
 
 /**
  * Layered anime hair: a smooth base shell over the skull, then broad ribbon locks laid
@@ -9,15 +10,18 @@ import { V, detail, part, strand, tr, type ColorFn, type Part } from './shapes';
  *
  * Returns parts for three bones: the head, the springy back hair, and the cowlick.
  */
-export type HairStyle = 'short' | 'bun' | 'long';
+export type HairStyle = 'short' | 'bun' | 'long' | 'spiky' | 'ponytail';
 
 export interface HairParts {
   head: Part[];
   back: Part[];
   cowlick: Part[];
+  /** Where the springy back-hair bone should sit (head space), when the style needs it elsewhere. */
+  backRoot?: THREE.Vector3;
 }
 
 export function buildHair(style: HairStyle, color: string, C: THREE.Vector3, R: number, hasHat: boolean): HairParts {
+  if (style === 'spiky' || style === 'ponytail') return buildHeroHair(style, color, C, R);
   const out: HairParts = { head: [], back: [], cowlick: [] };
   // Darker underneath, at the nape and toward the tips; the halo shine is added in the shader.
   const shade: ColorFn = (p) => {
@@ -146,4 +150,119 @@ export function cowlickRoot(C: THREE.Vector3, R: number) {
   const polar = 0.12;
   const az = 0.6;
   return V(C.x + Math.sin(polar) * Math.sin(az) * R * 1.02, C.y + Math.cos(polar) * R * 1.02, C.z + Math.sin(polar) * Math.cos(az) * R * 1.02);
+}
+
+
+/**
+ * The two hero styles: short spiky hair (boy), and a side-swept fringe with long framing
+ * locks and a swinging ponytail (girl).
+ */
+function buildHeroHair(style: 'spiky' | 'ponytail', color: string, C: THREE.Vector3, R: number): HairParts {
+  const out: HairParts = { head: [], back: [], cowlick: [] };
+  const shade: ColorFn = (p) => 0.74 + 0.3 * THREE.MathUtils.smoothstep((p.y - C.y) / R, -1.4, 0.7);
+  const lock = (g: THREE.BufferGeometry, outline = true) => part(g, color, Mat.Hair, { shade, outline });
+  const sp = (polar: number, az: number, k = 1.07) =>
+    V(C.x + Math.sin(polar) * Math.sin(az) * R * k, C.y + Math.cos(polar) * R * k, C.z + Math.sin(polar) * Math.cos(az) * R * k);
+  const flow = (p0: number, az0: number, p1: number, az1: number, r0: number, lift: number, k0 = 1.04, flat = 0.4) => {
+    const pts: THREE.Vector3[] = [];
+    for (let i = 0; i <= 4; i++) {
+      const t = i / 4;
+      pts.push(sp(THREE.MathUtils.lerp(p0, p1, t), THREE.MathUtils.lerp(az0, az1, t), k0 + 0.04 * Math.sin(t * Math.PI) + lift * t * t - 0.05 * (1 - t) ** 3));
+    }
+    // (Roots sink into the cap and narrow, so their cut ends never show on the outline.)
+    return strand(pts, r0, 0.003, flat, 12, 6, C, 0.3);
+  };
+  const boy = style === 'spiky';
+
+  // Base shell: the head's own shape grown a little, cut along a real hairline: high on the
+  // forehead, round the temples and behind the ears, down to the nape (higher for a short cut).
+  const s = R / 0.158;
+  const cr = V(0.152 * s, 0.155 * s, 0.158 * s);
+  const cc = V(C.x, C.y + 0.014 * s, C.z - 0.01 * s);
+  const hairline = (az: number) => {
+    const a = Math.min(Math.abs(az) / Math.PI, 1); // 0 front .. 1 back
+    return boy ? R * (0.5 - 1.25 * Math.pow(a, 0.75)) : R * (0.52 - 1.55 * Math.pow(a, 0.8));
+  };
+  const capField = (x: number, y: number, z: number) => {
+    const px = (x - cc.x) / cr.x;
+    const py = (y - cc.y) / cr.y;
+    const pz = (z - cc.z) / cr.z;
+    const k0 = Math.hypot(px, py, pz);
+    const k1 = Math.hypot(px / cr.x, py / cr.y, pz / cr.z);
+    const d = (k0 * (k0 - 1)) / k1 - 0.008 * s;
+    const cut = C.y + hairline(Math.atan2(x - C.x, z - C.z)) - y;
+    return Math.max(d, cut);
+  };
+  const r2 = Math.max(cr.x, cr.y, cr.z) + 0.03;
+  const cap = surfaceNets(capField, { min: V(cc.x - r2, cc.y - r2, cc.z - r2), max: V(cc.x + r2, cc.y + r2, cc.z + r2) }, detail.crowd ? 0.009 : 0.006);
+  out.head.push(lock(cap));
+
+  if (boy) {
+    // Crown: locks lifting and flicking outward at the tips, for a lively spiky outline.
+    for (let i = 0; i < 9; i++) {
+      const az = (i / 9) * Math.PI * 2 + 0.25;
+      const end = 1.0 + 0.3 * (1 - Math.cos(az)) * 0.5 + (i % 3) * 0.06;
+      out.head.push(lock(flow(0.24, az * 0.8, end, az + 0.12, 0.085, 0.13, 1.04, 0.45), false));
+    }
+    // Tufts sweeping up and back from the crown.
+    for (const [az, len] of [[2.2, 0.85], [2.8, 1.0], [-2.4, 0.95], [-2.9, 0.8], [3.14, 1.1]] as [number, number][]) {
+      out.head.push(lock(strand([sp(0.2, az, 1.0), sp(0.55, az, 1.18), sp(len, az + 0.15, 1.27)], 0.055, 0.003, 0.5, 10, 6, C)));
+    }
+    // Fringe: short pointed locks swept to one side, ending above the brows.
+    for (let i = 0; i < 7; i++) {
+      const u = i / 6 - 0.5;
+      const az = u * 1.6;
+      const len = 1.06 + Math.abs(u) * 0.25 + (i % 2) * 0.08;
+      out.head.push(lock(flow(0.48, az * 0.7 + 0.15, len, az + 0.22, i % 2 ? 0.05 : 0.058, 0.04, 1.05, 0.34)));
+    }
+    // Short sides to the middle of the ear, and spiky back rows ending at the nape.
+    for (const side of [-1, 1]) {
+      out.head.push(lock(flow(0.6, side * 1.25, 1.78, side * 1.3, 0.055, 0.03, 1.05)));
+      out.head.push(lock(flow(0.6, side * 1.6, 1.72, side * 1.68, 0.06, 0.05, 1.05)));
+    }
+    for (let i = 0; i < 9; i++) {
+      const az = Math.PI + (i / 8 - 0.5) * 2.5;
+      out.head.push(lock(flow(0.45, az, 1.86 + (i % 2) * 0.07, az + 0.06 * (i % 2 ? 1 : -1), 0.072, 0.12, 1.05), i % 2 === 0));
+    }
+    out.cowlick.push(lock(strand([V(0, 0, 0), V(0.01, 0.05, 0.01), V(0.035, 0.085, 0.04), V(0.065, 0.075, 0.075)], 0.022, 0.003, 0.5, 12, 6)));
+    return out;
+  }
+
+  // Girl: hair drawn back over the crown toward a ponytail tied high at the back.
+  const tieP = 1.15;
+  out.backRoot = sp(tieP, Math.PI, 1.04);
+  for (let i = 0; i < 8; i++) {
+    const az = (i / 7 - 0.5) * 2.6;
+    out.head.push(lock(flow(0.5, az * 0.6, tieP, Math.PI + (az > 0 ? -0.25 : 0.25) * (1 - Math.abs(az) / 1.3), 0.08, 0.0, 1.035, 0.42), false));
+  }
+  // Side-swept fringe.
+  for (let i = 0; i < 7; i++) {
+    const u = i / 6 - 0.5;
+    const az = u * 1.55;
+    const len = 1.16 + Math.abs(u) * 0.3 + (i % 2) * 0.09;
+    out.head.push(lock(flow(0.42, az * 0.7 + 0.4 * 0.3, len, az + (az - 0.4) * 0.2 - 0.12, i % 2 ? 0.05 : 0.058, 0.0, 1.05, 0.32)));
+  }
+  // Long locks framing the face, down to the jaw.
+  for (const side of [-1, 1]) {
+    out.head.push(lock(flow(0.55, side * 1.15, 2.35, side * 1.08, 0.05, 0.0, 1.05, 0.45)));
+    out.head.push(lock(flow(0.6, side * 1.4, 2.2, side * 1.38, 0.05, 0.02, 1.05, 0.45)));
+  }
+  // The lower back of the head, smooth under the tie.
+  for (let i = 0; i < 7; i++) {
+    const az = Math.PI + (i / 6 - 0.5) * 2.0;
+    out.head.push(lock(flow(1.9, az, tieP + 0.1, Math.PI + (az - Math.PI) * 0.3, 0.07, 0.0, 1.03, 0.4), false));
+  }
+  // Hair tie.
+  const tie = new THREE.TorusGeometry(0.03, 0.011, 6, 14);
+  const t0 = out.backRoot;
+  out.head.push(part(tie.lookAt(V(0, Math.cos(tieP), -Math.sin(tieP))).translate(t0.x, t0.y, t0.z), '#c9543e', Mat.Cloth, { outline: false }));
+  // The ponytail (on the back-hair bone, origin at the tie): full at the top, tapering, swinging.
+  for (let i = 0; i < 7; i++) {
+    const a = (i / 7) * Math.PI * 2;
+    const x = Math.cos(a) * 0.016;
+    const z = Math.sin(a) * 0.012;
+    const len = 0.36 + Math.sin(i * 1.9) * 0.03;
+    out.back.push(lock(strand([V(x, 0, z), V(x * 2.2, -0.04, -0.06 + z), V(x * 2.4, -len * 0.5, -0.075 + z), V(x * 1.2, -len, -0.035)], 0.03, 0.004, 0.6, 12, 6)));
+  }
+  return out;
 }

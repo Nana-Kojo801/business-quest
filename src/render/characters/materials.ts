@@ -135,9 +135,9 @@ const SHADING = /* glsl */ `
   } else if (m == 4) {
     // Hair halo: a crisp, narrow, broken band of shine across the upper head, facing the viewer.
     float wob = (chNoise(vec2(atan(vObjPos.x, vObjPos.z) * 9.0, 3.0)) - 0.5) * 0.12;
-    float band = smoothstep(0.075, 0.03, abs(normal.y - 0.52 + wob)) * smoothstep(0.1, 0.45, normal.z);
+    float band = smoothstep(0.055, 0.02, abs(normal.y - 0.52 + wob)) * smoothstep(0.1, 0.45, normal.z);
     float broken = step(0.42, chNoise(vec2(atan(vObjPos.x, vObjPos.z) * 16.0, 0.0)));
-    outgoingLight += mix(diffuseColor.rgb * 1.6, vec3(1.0), 0.3) * band * broken * (0.45 + 0.55 * lit) * length(uSunCol) * 0.2;
+    outgoingLight += mix(diffuseColor.rgb * 1.6, vec3(1.0), 0.3) * band * broken * (0.45 + 0.55 * lit) * length(uSunCol) * 0.15;
   }
 
   // Rim light from the sun on the silhouette.
