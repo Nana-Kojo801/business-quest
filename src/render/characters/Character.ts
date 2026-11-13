@@ -15,6 +15,7 @@ import {
 } from './body';
 import { EXPRESSIONS, EXPRESSION_NAMES, Eyes, FACE_PHI_LEN, FACE_THETA_LEN, FACE_THETA_TOP, faceAtlas, faceMaterial, type Expression } from './face';
 import { buildHair, cowlickRoot } from './hair';
+import { figureMantle, figureParts, sculptedFacePatch, sculptedSkull } from './figure';
 import { Mat, characterMaterials, faceLight, type CharacterMaterials } from './materials';
 import { V, colored, detail, faceNormals, headShape, part, type ColorFn, type Part } from './shapes';
 import type { Look, Personality } from './looks';
@@ -61,9 +62,25 @@ function finalize(root: THREE.Object3D, items: Collected[], m: CharacterMaterial
     const bi = bones.indexOf(it.pivot as THREE.Bone);
     const mw = it.pivot.matrixWorld;
     for (const p of it.parts) {
-      const g = colored(p.geo, p.color, p.mat, p.shade).applyMatrix4(mw);
-      lists[it.mat].push(skin(g, bi));
-      if (p.outline !== false && it.mat === 'body') lists.outline.push(skin(g.clone(), bi));
+      let g: THREE.BufferGeometry;
+      if (p.skinBones) {
+        // Sculpted: already in character space, with blended weights over several bones.
+        g = colored(p.geo, p.color, p.mat, p.shade);
+        const ref = g.attributes.aSkinRef as THREE.BufferAttribute;
+        const wt = g.attributes.aSkinW as THREE.BufferAttribute;
+        const idx = new Uint16Array(ref.count * 4);
+        for (let i = 0; i < ref.count * 4; i++) idx[i] = Math.max(0, bones.indexOf(p.skinBones[ref.array[i]] as THREE.Bone));
+        g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(idx, 4));
+        g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(new Float32Array(wt.array), 4));
+        g.deleteAttribute('aSkinRef');
+        g.deleteAttribute('aSkinW');
+      } else if (p.skinTo) {
+        g = skin(colored(p.geo, p.color, p.mat, p.shade), bones.indexOf(p.skinTo as THREE.Bone));
+      } else {
+        g = skin(colored(p.geo, p.color, p.mat, p.shade).applyMatrix4(mw), bi);
+      }
+      lists[it.mat].push(g);
+      if (p.outline !== false && it.mat === 'body') lists.outline.push(g.clone());
     }
   }
   const skeleton = new THREE.Skeleton(bones);
@@ -173,7 +190,8 @@ export class Character {
     this.root.add(this.hips);
     this.hips.position.y = Character.HIP_HEIGHT;
     this.hips.add(this.torso);
-    bone(this.hips, hipParts(look, w));
+    const sculptedShape = look.shape === 'sculpted';
+    if (!sculptedShape) bone(this.hips, hipParts(look, w));
 
     // Legs, with a foot bone so soles stay flat and toes push off.
     for (const side of [-1, 1]) {
@@ -186,13 +204,15 @@ export class Character {
       const foot = new THREE.Bone();
       foot.position.y = -0.345;
       shin.add(foot);
-      bone(thigh, thighParts(look));
-      bone(shin, shinParts(look));
-      bone(foot, footParts(look));
+      if (!sculptedShape) {
+        bone(thigh, thighParts(look));
+        bone(shin, shinParts(look));
+        bone(foot, footParts(look));
+      }
       this.legs.push({ thigh, shin, foot });
     }
 
-    bone(this.torso, torsoParts(look, w));
+    if (!sculptedShape) bone(this.torso, torsoParts(look, w));
 
     // Arms hang from the shoulder line.
     for (const side of [-1, 1]) {
@@ -202,8 +222,10 @@ export class Character {
       const fore = new THREE.Bone();
       fore.position.y = -0.25;
       upper.add(fore);
-      bone(upper, upperArmParts(look));
-      bone(fore, forearmParts(look, side));
+      if (!sculptedShape) {
+        bone(upper, upperArmParts(look));
+        bone(fore, forearmParts(look, side));
+      }
       this.arms.push({ upper, fore });
     }
 
@@ -212,7 +234,19 @@ export class Character {
     this.torso.add(this.head);
     const R = 0.163;
     const C = V(0, R * 0.95, 0);
-    bone(this.head, headParts(look, C, R));
+    bone(this.head, headParts(look, C, R, !sculptedShape));
+    if (sculptedShape) {
+      // Sculpted figure: one smooth body with fitted clothes, and a sculpted head.
+      this.root.updateMatrixWorld(true);
+      const fb = {
+        hips: this.hips, torso: this.torso, head: this.head,
+        thighs: this.legs.map((l) => l.thigh), shins: this.legs.map((l) => l.shin), feet: this.legs.map((l) => l.foot),
+        uppers: this.arms.map((a) => a.upper), fores: this.arms.map((a) => a.fore),
+      };
+      bone(this.root, figureParts(look, fb));
+      if (look.cape) bone(this.root, figureMantle(look, fb));
+      bone(this.head, [sculptedSkull(C, R, look)]);
+    }
     const hair = buildHair(look.hairStyle, look.hair, C, R, !!look.hat);
     bone(this.head, hair.head);
     this.hairBack.position.set(0, C.y + R * 0.2, -R * 0.4);
@@ -224,17 +258,22 @@ export class Character {
 
     const hairCol = new THREE.Color(look.hair);
     const bright = hairCol.r + hairCol.g + hairCol.b > 2.2;
-    const atlas = faceAtlas({ iris: look.eyes, brow: hairCol.clone().multiplyScalar(bright ? 0.55 : 0.75).getStyle(), calm: look.calm }, options.crowd ? 0.5 : 1);
+    const atlas = faceAtlas({ iris: look.eyes, brow: hairCol.clone().multiplyScalar(bright ? 0.55 : 0.75).getStyle(), calm: look.calm, style: look.faceStyle, noseMark: !sculptedShape }, options.crowd ? 0.5 : 1);
     const face = faceMaterial(atlas);
     this.faceU = face.uniforms;
     atmosphere.patchMaterial(face.material);
-    const fg = new THREE.SphereGeometry(R * 1.006, options.crowd ? 16 : 24, options.crowd ? 10 : 14, Math.PI / 2 - FACE_PHI_LEN / 2, FACE_PHI_LEN, Math.PI / 2 - FACE_THETA_TOP, FACE_THETA_LEN);
-    // Sphere uv runs the other way round from our canvas layout; mirror u.
-    const uv = fg.attributes.uv as THREE.BufferAttribute;
-    for (let i = 0; i < uv.count; i++) uv.setX(i, 1 - uv.getX(i));
-    headShape(fg, R);
-    fg.translate(C.x, C.y, C.z);
-    faceNormals(fg, C, R);
+    let fg: THREE.BufferGeometry;
+    if (sculptedShape) {
+      fg = sculptedFacePatch(C, R, FACE_PHI_LEN, FACE_THETA_TOP, FACE_THETA_LEN);
+    } else {
+      fg = new THREE.SphereGeometry(R * 1.006, options.crowd ? 16 : 24, options.crowd ? 10 : 14, Math.PI / 2 - FACE_PHI_LEN / 2, FACE_PHI_LEN, Math.PI / 2 - FACE_THETA_TOP, FACE_THETA_LEN);
+      // Sphere uv runs the other way round from our canvas layout; mirror u.
+      const uv = fg.attributes.uv as THREE.BufferAttribute;
+      for (let i = 0; i < uv.count; i++) uv.setX(i, 1 - uv.getX(i));
+      headShape(fg, R);
+      fg.translate(C.x, C.y, C.z);
+      faceNormals(fg, C, R);
+    }
     const faceMesh = new THREE.Mesh(fg, face.material);
     faceMesh.renderOrder = 2;
     faceMesh.name = 'face';
@@ -251,7 +290,7 @@ export class Character {
       const capeShade: ColorFn = (p) => 0.92 + 0.08 * THREE.MathUtils.smoothstep(p.y, -0.3, 0);
       bone(this.capeUpper, [part(capeSheet(0.3, 0.38 * w, 0.45 * w), look.cape, Mat.Cloth, { shade: capeShade, outline: false })], 'cloth');
       bone(this.capeLower, [part(capeSheet(0.3, 0.45 * w, 0.52 * w), look.cape, Mat.Cloth, { shade: (p) => 0.85 + 0.07 * THREE.MathUtils.smoothstep(p.y, -0.3, 0), outline: false })], 'cloth');
-      bone(this.torso, mantleParts(look, w));
+      if (!sculptedShape) bone(this.torso, mantleParts(look, w));
     }
 
     finalize(this.root, items, m);

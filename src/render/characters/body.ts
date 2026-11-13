@@ -155,13 +155,16 @@ export function forearmParts(look: Look, side: number): Part[] {
 }
 
 /** Skull, ears and hat (the hair is built separately). C is the head centre, R its radius. */
-export function headParts(look: Look, C: THREE.Vector3, R: number): Part[] {
-  const skull = headShape(new THREE.SphereGeometry(R, detail.crowd ? 20 : 28, detail.crowd ? 14 : 20), R).translate(C.x, C.y, C.z);
-  faceNormals(skull, C, R);
-  const out: Part[] = [part(skull, look.skin, Mat.Skin)];
-  for (const side of [-1, 1]) {
-    const ear = new THREE.SphereGeometry(0.03, 12, 10).scale(0.38, 0.95, 0.72).rotateY(side * 0.35);
-    out.push(part(tr(ear, side * R * 0.95, C.y - 0.012, -0.012), look.skin, Mat.Skin));
+export function headParts(look: Look, C: THREE.Vector3, R: number, skullAndEars = true): Part[] {
+  const out: Part[] = [];
+  if (skullAndEars) {
+    const skull = headShape(new THREE.SphereGeometry(R, detail.crowd ? 20 : 28, detail.crowd ? 14 : 20), R).translate(C.x, C.y, C.z);
+    faceNormals(skull, C, R);
+    out.push(part(skull, look.skin, Mat.Skin));
+    for (const side of [-1, 1]) {
+      const ear = new THREE.SphereGeometry(0.03, 12, 10).scale(0.38, 0.95, 0.72).rotateY(side * 0.35);
+      out.push(part(tr(ear, side * R * 0.95, C.y - 0.012, -0.012), look.skin, Mat.Skin));
+    }
   }
   if (look.hat) {
     const brim = lathe(smoothProfile([[0.001, 0.0], [0.3, -0.008], [0.355, -0.03], [0.345, -0.005], [0.001, 0.016]]), 32);

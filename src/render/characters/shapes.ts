@@ -14,6 +14,13 @@ export interface Part {
   outline?: boolean;
   /** Per-vertex brightness multiplier. */
   shade?: ColorFn;
+  /**
+   * Sculpted parts are built in character space with blended skin weights: the geometry
+   * carries aSkinRef (indices into this list) and aSkinW (weights), 4 per vertex.
+   */
+  skinBones?: THREE.Object3D[];
+  /** A rigid part built in character space, following this bone. */
+  skinTo?: THREE.Object3D;
 }
 
 export const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);

@@ -21,6 +21,9 @@ interface Entry {
 }
 
 const CAST: Entry[] = [
+  // Sample of the sculpted style (#40), in two face styles, beside the current hero.
+  { name: 'hero-new', look: { ...LOOKS.player, shape: 'sculpted', faceStyle: 'storybook' } },
+  { name: 'hero-new-soft', look: { ...LOOKS.player, shape: 'sculpted', faceStyle: 'soft' } },
   { name: 'player', look: LOOKS.player },
   { name: 'merchant', look: LOOKS.merchant },
   { name: 'keeper', look: LOOKS.keeper },

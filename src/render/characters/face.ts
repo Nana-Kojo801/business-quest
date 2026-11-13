@@ -64,6 +64,10 @@ export interface FaceStyle {
   brow: string;
   /** Narrower, gentler eyes for older characters. */
   calm?: boolean;
+  /** Drawing style: anime (big glossy eyes), storybook (round, simple), soft (gentle almond eyes). */
+  style?: 'anime' | 'storybook' | 'soft';
+  /** Draw a little nose mark (heads without a sculpted nose). */
+  noseMark?: boolean;
 }
 
 /** Face-pixel position for an angle offset from the face centre (radians right, radians down). */
@@ -98,8 +102,9 @@ interface EyeOpts {
 
 function drawOpenEye(g: G, s: FaceStyle, o: number, opts: EyeOpts) {
   const lash = s.lash ?? '#2a1820';
-  const ew = 58;
-  const eh = (s.calm ? 40 : 54) * (0.6 + 0.4 * opts.open);
+  const soft = s.style === 'soft';
+  const ew = soft ? 52 : 58;
+  const eh = (s.calm ? 40 : soft ? 44 : 54) * (0.6 + 0.4 * opts.open);
   g.save();
   g.rotate(opts.droop * o * 0.18);
   // White of the eye with a soft lid shadow.
@@ -175,15 +180,18 @@ function drawOpenEye(g: G, s: FaceStyle, o: number, opts: EyeOpts) {
   g.beginPath();
   g.moveTo(-ew * 1.04 * o, -eh * 0.08);
   g.bezierCurveTo(-ew * 0.72 * o, lidY - eh * 0.08, ew * 0.7 * o, lidY - eh * 0.14, ew * 1.08 * o, -eh * 0.44);
-  g.lineTo(ew * 1.32 * o, -eh * 0.66);
-  g.lineTo(ew * 1.24 * o, -eh * 0.42);
-  g.lineTo(ew * 1.38 * o, -eh * 0.4);
+  if (!soft) {
+    g.lineTo(ew * 1.32 * o, -eh * 0.66);
+    g.lineTo(ew * 1.24 * o, -eh * 0.42);
+    g.lineTo(ew * 1.38 * o, -eh * 0.4);
+  } else g.lineTo(ew * 1.16 * o, -eh * 0.5);
   g.lineTo(ew * 1.06 * o, -eh * 0.22);
-  g.bezierCurveTo(ew * 0.66 * o, lidY + eh * 0.16, -ew * 0.6 * o, lidY + eh * 0.2, -ew * 1.04 * o, -eh * 0.08);
+  const th = soft ? 0.09 : 0.16; // lash thickness
+  g.bezierCurveTo(ew * 0.66 * o, lidY + eh * th, -ew * 0.6 * o, lidY + eh * (th + 0.04), -ew * 1.04 * o, -eh * 0.08);
   g.closePath();
   g.fill();
   // Eyelid crease above the lashes.
-  g.strokeStyle = 'rgba(120, 60, 60, 0.55)';
+  g.strokeStyle = soft ? 'rgba(120, 60, 60, 0)' : 'rgba(120, 60, 60, 0.55)';
   g.lineWidth = 2.5;
   g.lineCap = 'round';
   g.beginPath();
@@ -239,7 +247,106 @@ function drawBrow(g: G, s: FaceStyle, o: number, lift: number, tilt: number, arc
   g.restore();
 }
 
+/** Storybook eyes: round, filled with colour, big soft catchlights, a light lid line. */
+function drawStorybookEye(g: G, s: FaceStyle, o: number, state: Eyes) {
+  const lash = s.lash ?? '#2a1820';
+  const ew = 30;
+  const eh = (s.calm ? 34 : 42) * (state === Eyes.Wide ? 1.08 : 1);
+  if (state === Eyes.Closed || state === Eyes.Happy) {
+    g.strokeStyle = lash;
+    g.lineCap = 'round';
+    g.lineWidth = 6;
+    g.beginPath();
+    if (state === Eyes.Happy) {
+      g.moveTo(-ew * 1.05, 8);
+      g.quadraticCurveTo(0, -26, ew * 1.05, 8);
+    } else {
+      g.moveTo(-ew * 1.05, 0);
+      g.quadraticCurveTo(0, 18, ew * 1.05, 0);
+    }
+    g.stroke();
+    return;
+  }
+  const open = state === Eyes.Thinking ? 0.6 : state === Eyes.Worried ? 0.88 : 1;
+  const look = state === Eyes.Thinking ? 0.25 : 0;
+  g.save();
+  g.rotate(state === Eyes.Worried ? o * 0.12 : 0);
+  const col = new THREE.Color(s.iris);
+  const grad = g.createLinearGradient(0, -eh, 0, eh);
+  grad.addColorStop(0, col.clone().multiplyScalar(0.18).getStyle());
+  grad.addColorStop(0.55, col.clone().multiplyScalar(0.55).getStyle());
+  grad.addColorStop(1, col.clone().lerp(new THREE.Color('#ffffff'), 0.15).getStyle());
+  g.fillStyle = grad;
+  g.beginPath();
+  g.ellipse(look * ew, 0, ew, eh, 0, 0, Math.PI * 2);
+  g.fill();
+  // Catchlights.
+  const hs = state === Eyes.Wide ? 0.75 : 1;
+  g.fillStyle = '#ffffff';
+  g.beginPath();
+  g.ellipse(look * ew - o * ew * 0.3, -eh * 0.38, ew * 0.36 * hs, eh * 0.26 * hs, -0.3 * o, 0, Math.PI * 2);
+  g.fill();
+  g.globalAlpha = 0.85;
+  g.beginPath();
+  g.arc(look * ew + o * ew * 0.35, eh * 0.4, ew * 0.14 * hs, 0, Math.PI * 2);
+  g.fill();
+  g.globalAlpha = 1;
+  // Partly shut: erase above the lid.
+  const lidY = -eh + (1 - open) * eh * 1.6;
+  if (open < 0.99) {
+    g.save();
+    g.globalCompositeOperation = 'destination-out';
+    g.fillRect(-ew * 2, -eh * 2, ew * 4, lidY + eh * 2);
+    g.restore();
+  }
+  // Upper lid: a soft dark arc with one lash flick at the outer corner.
+  g.strokeStyle = lash;
+  g.lineCap = 'round';
+  g.lineWidth = 5.5;
+  g.beginPath();
+  if (open < 0.99) {
+    g.moveTo(-ew * 1.05, lidY);
+    g.lineTo(ew * 1.05, lidY);
+  } else g.ellipse(look * ew, 0, ew * 1.04, eh * 1.02, 0, Math.PI * 1.08, Math.PI * 1.92);
+  g.stroke();
+  g.lineWidth = 4;
+  g.beginPath();
+  g.moveTo(o * ew * 0.88, lidY < -eh * 0.9 ? -eh * 0.62 : lidY);
+  g.lineTo(o * ew * 1.28, (lidY < -eh * 0.9 ? -eh * 0.62 : lidY) - 10);
+  g.stroke();
+  g.restore();
+}
+
+/** Storybook brows: short, soft, rounded dashes. */
+function drawStorybookBrow(g: G, s: FaceStyle, o: number, lift: number, tilt: number) {
+  g.save();
+  g.translate(0, -lift);
+  g.rotate(-tilt * o * 0.3);
+  g.fillStyle = s.brow;
+  g.beginPath();
+  g.ellipse(0, 0, 22, 5.5, 0, 0, Math.PI * 2);
+  g.fill();
+  g.restore();
+}
+
 function drawEyes(g: G, s: FaceStyle, state: Eyes) {
+  if (s.style === 'storybook') {
+    for (const side of [-1, 1]) {
+      const [ex, ey] = at(side * 0.33, EYE_Y + 0.02);
+      const [bx, by] = at(side * 0.34, -0.26);
+      g.save();
+      g.translate(ex, ey);
+      drawStorybookEye(g, s, side, state);
+      g.restore();
+      g.save();
+      g.translate(bx, by);
+      const lift = state === Eyes.Wide ? 12 : state === Eyes.Happy ? 5 : state === Eyes.Thinking && side > 0 ? 9 : 0;
+      const tilt = state === Eyes.Worried ? 1 : state === Eyes.Thinking && side < 0 ? -0.4 : 0;
+      drawStorybookBrow(g, s, side, lift, tilt);
+      g.restore();
+    }
+    return;
+  }
   for (const side of [-1, 1]) {
     const o = side; // outer corner points away from centre
     const [ex, ey] = at(side * EYE_X, EYE_Y);
@@ -268,7 +375,7 @@ function drawEyes(g: G, s: FaceStyle, state: Eyes) {
 }
 
 /** Cheeks and nose: the fixed lower-face layer. */
-function drawLower(g: G) {
+function drawLower(g: G, s: FaceStyle) {
   for (const side of [-1, 1]) {
     const [cx, cy] = at(side * 0.5, 0.36);
     const bl = g.createRadialGradient(cx, cy, 2, cx, cy, 32);
@@ -281,14 +388,15 @@ function drawLower(g: G) {
     g.strokeStyle = 'rgba(230, 95, 105, 0.45)';
     g.lineWidth = 2;
     g.lineCap = 'round';
-    for (let k = -1; k <= 1; k++) {
+    for (let k = -1; k <= 1 && s.style !== 'storybook'; k++) {
       g.beginPath();
       g.moveTo(cx + k * 9 - 3, cy + 4);
       g.lineTo(cx + k * 9 + 3, cy - 4);
       g.stroke();
     }
   }
-  // Nose: a small shadow under the tip and a hint of a highlight.
+  // Nose: a small shadow under the tip (only on heads without a sculpted nose).
+  if (s.noseMark === false) return;
   const [nx, ny] = at(0.025, 0.3);
   g.fillStyle = 'rgba(170, 95, 85, 0.5)';
   g.beginPath();
@@ -382,7 +490,7 @@ const cache = new Map<string, THREE.CanvasTexture>();
 
 /** The face atlas for a style. Textures are shared between characters with the same style. */
 export function faceAtlas(style: FaceStyle, scale = 1): THREE.CanvasTexture {
-  const key = `${style.iris}|${style.brow}|${style.lash ?? ''}|${style.calm ? 1 : 0}|${scale}`;
+  const key = `${style.iris}|${style.brow}|${style.lash ?? ''}|${style.calm ? 1 : 0}|${style.style ?? 'anime'}|${style.noseMark === false ? 0 : 1}|${scale}`;
   const hit = cache.get(key);
   if (hit) return hit;
   const canvas = document.createElement('canvas');
@@ -405,7 +513,7 @@ export function faceAtlas(style: FaceStyle, scale = 1): THREE.CanvasTexture {
   g.rect(LOWER_ORIGIN[0], LOWER_ORIGIN[1], W, LOWER_H);
   g.clip();
   g.translate(LOWER_ORIGIN[0], LOWER_ORIGIN[1] - EYE_H);
-  drawLower(g);
+  drawLower(g, style);
   g.restore();
   for (let i = 0; i < 8; i++) {
     const [x, y] = mouthCell(i);
@@ -437,7 +545,7 @@ export function faceMaterial(map: THREE.Texture) {
     uMouth: { value: Mouth.Soft as number },
     uLight: { value: new THREE.Color(1, 1, 1) },
   };
-  const m = new THREE.MeshBasicMaterial({ map, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+  const m = new THREE.MeshBasicMaterial({ map, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, side: THREE.DoubleSide });
   m.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
     shader.fragmentShader = shader.fragmentShader

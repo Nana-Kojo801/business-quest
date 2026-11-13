@@ -34,6 +34,10 @@ export interface Look {
   vest?: boolean;
   /** How they stand around: bouncy, fidgety or still. */
   personality?: Personality;
+  /** Body construction: 'classic' (assembled parts) or 'sculpted' (one smooth form, fitted clothes). */
+  shape?: 'classic' | 'sculpted';
+  /** How the face is drawn. */
+  faceStyle?: 'anime' | 'storybook' | 'soft';
 }
 
 export const LOOKS: Record<string, Look> = {
